@@ -81,6 +81,25 @@ Per sprint: `go test ./internal/cli -run '...'` and
 `go test ./internal/reviewtransaction -run '...'` scoped; `gofmt -l`;
 closure: `go test ./...`, `go build ./...`.
 
+## Real-time evidence (live session, 2026-10-03)
+
+- U2 baseline measured: the pure-test marker-utility slice (4 files, all under
+  tests/) assessed **medium** via `executable_change` on
+  tests/atomic-marker.test.ts (review-99f4a877 risk_reasons) — test-only changes
+  floor at medium because "executable" includes test files. A Facts digest
+  proving tests-only would justify a low proposal. Conversely, assess on a mixed
+  range correctly flagged executable changes (codex-native.ts, gentle-ai.ts) —
+  the classifier is not wrong, it is blind to WHAT KIND of executable.
+- U4 baseline measured: assess over base d11971cf returned the accumulated
+  11-path range with `reviewDue: "slice_budget_reached"` even though every
+  sub-slice in it has an individually acknowledged receipt — there is no native
+  "last consumed boundary" record the assessor consults; the parent compensates
+  with manual base selection. This is the load-bearing gap for U4.
+- Version reconciliation: installed binary = v4.0.0; fork main = v4.0.0 +
+  follow-ups (no tags; #5187 post-v4.0.0 referenced). Upstream PRs target
+  main; seams verified at fork HEAD may differ slightly from the installed
+  binary — re-run probes against main before PRing.
+
 ## Evidence
 
 Scout handoff (this session): composer seam
