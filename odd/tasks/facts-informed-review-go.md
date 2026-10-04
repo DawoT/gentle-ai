@@ -115,3 +115,15 @@ Next: scoped read-only investigation of this dependency boundary and honest miss
 diagnostics; positive S2 acceptance/S1 live digest/full suite remain pending.
 L2 reviewer quota remains blocked; no approval/receipt/publishing claim.
 All backups and both registered worktrees retained; main cache untouched.
+
+## Main follow-up
+
+User selected main in both repositories. Active cross-repository tracking:
+parent gentle-shell main odd/tasks/main-live-completion.md. Exact unresolved
+repository-root node_modules paths now qualify as nonlocal VERSIONED graph
+edges only when both frozen trees prove the entire root absent. No runtime
+availability claim; raw tail traversal, tracked empty trees/symlinks/gitlinks,
+unknown proofs and unrelated unresolved siblings remain conservative misses.
+Real Git negative matrix and focused risk tests observed RED then GREEN;
+independent focused/package tests, vet/build/diff-check passed. Live acceptance
+requires rebuilding this new main commit and replaying unchanged real snapshots.

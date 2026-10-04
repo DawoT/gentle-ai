@@ -133,6 +133,78 @@ func factsRiskNonlocalSpecifier(specifier string) bool {
 	return factsRiskBuiltinSpecifier.MatchString(specifier) || factsRiskPackageSpecifier.MatchString(specifier)
 }
 
+// This deliberately narrow relative form identifies an external VERSIONED graph
+// boundary, not an installed or usable runtime dependency. Inspect raw segments
+// before cleaning: a tail traversal must never be normalized into acceptance.
+var factsRiskDependencyName = regexp.MustCompile(`^[a-z0-9_-][a-z0-9._-]*$`)
+var factsRiskDependencySegment = regexp.MustCompile(`^[a-zA-Z0-9_-][a-zA-Z0-9._-]*$`)
+
+func factsRiskRelativeDependency(importer, specifier string) bool {
+	if (!strings.HasPrefix(specifier, "./") && !strings.HasPrefix(specifier, "../")) || strings.ContainsAny(specifier, "\\\x00:?#") {
+		return false
+	}
+	stack := strings.Split(path.Dir(importer), "/")
+	if path.Dir(importer) == "." {
+		stack = nil
+	}
+	for _, segment := range stack {
+		if segment == "node_modules" {
+			return false
+		}
+	}
+	parts := strings.Split(specifier, "/")
+	for i, segment := range parts {
+		if segment == "node_modules" {
+			if len(stack) != 0 {
+				return false
+			}
+			tail := parts[i+1:]
+			if len(tail) == 0 {
+				return false
+			}
+			if strings.HasPrefix(tail[0], "@") {
+				if len(tail) < 2 || !factsRiskDependencyName.MatchString(tail[0][1:]) {
+					return false
+				}
+				tail = tail[1:]
+			}
+			if len(tail) < 2 || !factsRiskDependencyName.MatchString(tail[0]) {
+				return false
+			}
+			for _, p := range tail {
+				if p == "node_modules" || !factsRiskDependencySegment.MatchString(p) {
+					return false
+				}
+			}
+			return true
+		}
+		switch segment {
+		case ".":
+		case "..":
+			if len(stack) == 0 {
+				return false
+			}
+			stack = stack[:len(stack)-1]
+		default:
+			if !factsRiskDependencySegment.MatchString(segment) {
+				return false
+			}
+			stack = append(stack, segment)
+		}
+	}
+	return false
+}
+
+func factsRiskDependencyRootAbsent(root, tree string) bool {
+	if !factsRiskID(tree) {
+		return false
+	}
+	// Nonrecursive lookup is essential: -r omits a tracked empty tree. Any
+	// output (including malformed output) fails closed, regardless of entry type.
+	b, err := runGit(context.Background(), root, nil, nil, "ls-tree", "-z", tree, "--", ":(top,literal)node_modules")
+	return err == nil && len(b) == 0
+}
+
 // Nonindexed resources are vertices, not synthetic Facts sources. Only exact
 // relative filesystem JSON resolutions can be verified against the frozen tree.
 func factsRiskResources(root, tree string, db factsRiskDB, changed map[string]bool) (map[string]bool, bool) {
@@ -277,6 +349,20 @@ func ReadFactsRiskSignals(repoRoot, baseTree, candidateTree string, changedPaths
 		result.SymbolSurfaceDelta += len(old)
 	}
 	dependents := map[string]bool{}
+	rootProof := map[string]bool{}
+	dependencyRootsAbsent := func() bool {
+		for _, tree := range []string{baseTree, candidateTree} {
+			absent, checked := rootProof[tree]
+			if !checked {
+				absent = factsRiskDependencyRootAbsent(repoRoot, tree)
+				rootProof[tree] = absent
+			}
+			if !absent {
+				return false
+			}
+		}
+		return true
+	}
 	for _, side := range []struct {
 		tree string
 		db   factsRiskDB
@@ -293,7 +379,8 @@ func ReadFactsRiskSignals(repoRoot, baseTree, candidateTree string, changedPaths
 			if !importerOK {
 				return nil, nil
 			}
-			if e.Evidence == "unresolved" && e.Target == "" && e.Reason == "module-not-found" && factsRiskNonlocalSpecifier(e.Specifier) {
+			if e.Evidence == "unresolved" && e.Target == "" && e.Reason == "module-not-found" && (factsRiskNonlocalSpecifier(e.Specifier) ||
+				(factsRiskRelativeDependency(e.Importer, e.Specifier) && dependencyRootsAbsent())) {
 				continue
 			}
 			if !targetOK || (e.Evidence != "filesystem" && e.Evidence != "typescript") {

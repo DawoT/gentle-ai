@@ -160,8 +160,29 @@ func TestFactsRiskSignalsJSONResources(t *testing.T) {
 	}
 }
 
+// A failed or incomplete Git lookup cannot establish the external boundary.
+func TestFactsRiskSignalsDependencyProofFailures(t *testing.T) {
+	root := t.TempDir()
+	cmd := exec.Command("git", "-C", root, "init")
+	if b, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git init: %v %s", err, b)
+	}
+	for _, tree := range []string{"", "not-a-tree", strings.Repeat("a", 40)} {
+		if factsRiskDependencyRootAbsent(root, tree) {
+			t.Fatalf("invalid/unavailable tree %q proved absent", tree)
+		}
+	}
+	if factsRiskDependencyRootAbsent(filepath.Join(root, "missing"), strings.Repeat("a", 40)) {
+		t.Fatal("unavailable repository proved absent")
+	}
+	t.Setenv("PATH", "")
+	if factsRiskDependencyRootAbsent(root, strings.Repeat("a", 40)) {
+		t.Fatal("unavailable Git proved absent")
+	}
+}
+
 func TestFactsRiskSignals(t *testing.T) {
-	for _, tc := range []struct {
+	cases := []struct {
 		name, path, mode  string
 		dependents, delta int
 		want              RiskLevel
@@ -184,6 +205,7 @@ func TestFactsRiskSignals(t *testing.T) {
 		{"bare-external", "a_test.go", "external", 0, 0, RiskLow, "facts_tests_only_change"},
 		{"scoped-external", "a_test.go", "scoped", 0, 0, RiskLow, "facts_tests_only_change"},
 		{"relative", "a_test.go", "relative", 0, 0, RiskMedium, ""},
+		{"real-relative-dependency", "tests/shell-sidebar-fullscreen.test.ts", "dependency", 0, 0, RiskLow, "facts_tests_only_change"},
 		{"absolute", "a_test.go", "absolute", 0, 0, RiskMedium, ""},
 		{"empty-specifier", "a_test.go", "empty-specifier", 0, 0, RiskMedium, ""},
 		{"missing-specifier", "a_test.go", "missing-specifier", 0, 0, RiskMedium, ""},
@@ -203,7 +225,26 @@ func TestFactsRiskSignals(t *testing.T) {
 		{"parent-segment", "a_test.go", "parent-segment", 0, 0, RiskMedium, ""},
 		{"malformed-node", "a_test.go", "malformed-node", 0, 0, RiskMedium, ""},
 		{"production-cross-edge-with-builtin", "a_test.go", "cross-node", 0, 0, RiskMedium, ""},
+	}
+	for _, mode := range []string{
+		"unscoped", "cross", "cross-out", "sibling", "missing-importer", "missing-evidence", "missing-reason", "filled-target",
+		"traversal", "dot-tail", "nested-root", "invalid-package", "invalid-scope", "missing-subpath", "empty-subpath", "absolute", "url", "backslash", "query", "alias", "local-root",
+		"root-file-base", "root-file-candidate", "root-symlink-base", "root-symlink-candidate",
+		"root-submodule-base", "root-submodule-candidate", "root-empty-base", "root-empty-candidate",
+		"root-content-base", "root-content-candidate",
 	} {
+		want, reason := RiskMedium, ""
+		if mode == "unscoped" {
+			want, reason = RiskLow, "facts_tests_only_change"
+		}
+		cases = append(cases, struct {
+			name, path, mode  string
+			dependents, delta int
+			want              RiskLevel
+			reason            string
+		}{"dependency-" + mode, "tests/shell-sidebar-fullscreen.test.ts", "dependency-" + mode, 0, 0, want, reason})
+	}
+	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			root := t.TempDir()
 			check := func(err error) {
@@ -245,7 +286,7 @@ func TestFactsRiskSignals(t *testing.T) {
 				for i := 0; i < tc.dependents; i++ {
 					paths = append(paths, fmt.Sprintf("dep%d.go", i))
 				}
-				if tc.mode == "mixed" || tc.mode == "cross-node" {
+				if tc.mode == "mixed" || tc.mode == "cross-node" || tc.mode == "dependency-cross" || tc.mode == "dependency-cross-out" || tc.mode == "dependency-sibling" {
 					paths = append(paths, "dep.go")
 				}
 				for i, p := range paths {
@@ -267,7 +308,14 @@ func TestFactsRiskSignals(t *testing.T) {
 						} else if tc.mode == "resolved-unknown" {
 							evidence = "unknown"
 						}
-						edges = append(edges, map[string]string{"importer": p, "specifier": "./" + tc.path, "target": tc.path, "evidence": evidence})
+						edge := map[string]string{"importer": p, "specifier": "./" + tc.path, "target": tc.path, "evidence": evidence}
+						if tc.mode == "dependency-cross-out" {
+							edge = map[string]string{"importer": tc.path, "specifier": "../dep.go", "target": p, "evidence": "filesystem"}
+						}
+						if tc.mode == "dependency-sibling" {
+							edge = map[string]string{"importer": p, "specifier": "./missing", "evidence": "unresolved", "reason": "module-not-found"}
+						}
+						edges = append(edges, edge)
 					}
 				}
 				if tc.mode == "unresolved" {
@@ -282,6 +330,7 @@ func TestFactsRiskSignals(t *testing.T) {
 					"unsupported": "lodash", "unindexed-target": "./data.json", "alias": "#helpers",
 					"path-alias": "@/helpers", "parent-segment": "pkg/../helper", "malformed-node": "node:",
 					"cross-node": "node:path",
+					"dependency": "../node_modules/@earendil-works/pi-coding-agent/dist/modes/interactive/chat-viewport.js",
 				}[tc.mode]; ok {
 					edge := map[string]string{"importer": tc.path, "specifier": specifier, "target": "", "evidence": "unresolved", "reason": "module-not-found"}
 					switch tc.mode {
@@ -304,13 +353,64 @@ func TestFactsRiskSignals(t *testing.T) {
 					}
 					edges = append(edges, edge)
 				}
+				if strings.HasPrefix(tc.mode, "dependency-") {
+					specifier := "../node_modules/@earendil-works/pi-coding-agent/dist/modes/interactive/chat-viewport.js"
+					if s, ok := map[string]string{
+						"unscoped":        "../node_modules/pkg.name/dist/file.test.js",
+						"traversal":       "../node_modules/pkg/../other/file.js",
+						"dot-tail":        "../node_modules/pkg/./file.js",
+						"nested-root":     "../node_modules/pkg/node_modules/other/file.js",
+						"invalid-package": "../node_modules/.pkg/file.js",
+						"invalid-scope":   "../node_modules/@/pkg/file.js",
+						"missing-subpath": "../node_modules/pkg",
+						"empty-subpath":   "../node_modules/pkg/",
+						"absolute":        "/node_modules/pkg/file.js", "url": "https://host/node_modules/pkg/file.js",
+						"backslash": "../node_modules/pkg\\file.js", "query": "../node_modules/pkg/file.js?raw",
+						"alias": "@/node_modules/pkg/file.js", "local-root": "./node_modules/pkg/file.js",
+					}[strings.TrimPrefix(tc.mode, "dependency-")]; ok {
+						specifier = s
+					}
+					edge := map[string]string{"importer": tc.path, "specifier": specifier, "evidence": "unresolved", "reason": "module-not-found"}
+					switch tc.mode {
+					case "dependency-missing-importer":
+						delete(edge, "importer")
+					case "dependency-missing-evidence":
+						delete(edge, "evidence")
+					case "dependency-missing-reason":
+						delete(edge, "reason")
+					case "dependency-filled-target":
+						edge["target"] = tc.path
+					}
+					edges = append(edges, edge, edge) // Repeated edges share one proof per tree.
+				}
 				if tc.mode == "missing-path" {
 					refs, entries = map[string]string{}, ""
 				}
 				if tc.mode == "nil-edges" {
 					edges = nil
 				}
-				tree := git(entries, "mktree")
+				rootEntry := ""
+				if strings.HasPrefix(tc.mode, "dependency-root-") && (strings.HasSuffix(tc.mode, "-base") && depth == 0 || strings.HasSuffix(tc.mode, "-candidate") && depth == 1) {
+					mode, kind, oid := "100644", "blob", git("tracked\n", "hash-object", "-w", "--stdin")
+					switch strings.Split(tc.mode, "-")[2] {
+					case "symlink":
+						mode = "120000"
+					case "submodule":
+						mode, kind, oid = "160000", "commit", git("submodule\n", "commit-tree", git("", "mktree"))
+					case "empty":
+						mode, kind, oid = "040000", "tree", git("", "mktree")
+					case "content":
+						mode, kind, oid = "040000", "tree", git(fmt.Sprintf("100644 blob %s\tfile.js\n", oid), "mktree")
+					}
+					rootEntry = fmt.Sprintf("%s %s %s\tnode_modules\n", mode, kind, oid)
+				}
+				git("", "read-tree", git(rootEntry, "mktree"))
+				git(entries, "update-index", "--index-info")
+				tree := git("", "write-tree")
+				if rootEntry != "" && strings.Contains(tc.mode, "-empty-") {
+					// An index drops empty directories; construct this root literally.
+					tree = git(git("", "ls-tree", tree)+"\n"+rootEntry, "mktree")
+				}
 				commit := git("fixture\n", "commit-tree", tree)
 				baseTree, candidateTree = candidateTree, tree
 				source := commit
@@ -337,6 +437,16 @@ func TestFactsRiskSignals(t *testing.T) {
 				check(err)
 				if signals != nil {
 					t.Fatalf("missing changed path returned signals: %+v", signals)
+				}
+				return
+			}
+			if strings.HasPrefix(tc.mode, "dependency-root-") {
+				pointer, _ := json.Marshal(map[string]string{"format": "facts-pointer-v1", "generation": parent})
+				check(os.WriteFile(filepath.Join(cache, "facts.json"), pointer, 0600))
+				signals, err := ReadFactsRiskSignals(root, baseTree, candidateTree, snapshot.Paths)
+				check(err)
+				if signals != nil {
+					t.Fatalf("tracked dependency root returned signals: %+v", signals)
 				}
 				return
 			}
@@ -368,7 +478,7 @@ func TestFactsRiskSignals(t *testing.T) {
 			}
 			signals, e := ReadFactsRiskSignals(root, baseTree, candidateTree, []string{tc.path})
 			check(e)
-			if tc.reason == "" && tc.mode != "" && tc.mode != "mixed" && tc.mode != "cross-node" && signals != nil {
+			if tc.reason == "" && tc.mode != "" && tc.mode != "mixed" && tc.mode != "cross-node" && tc.mode != "dependency-cross" && tc.mode != "dependency-cross-out" && signals != nil {
 				t.Fatalf("incomplete evidence returned signals: %+v", signals)
 			}
 			if tc.reason != "" && (signals == nil || !signals.CoverageComplete || signals.UnchangedDependents != tc.dependents || signals.SymbolSurfaceDelta != tc.delta) {
