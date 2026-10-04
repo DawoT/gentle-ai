@@ -112,6 +112,7 @@ type RiskAssessment struct {
 }
 
 type RiskInput struct {
+	facts   *FactsRiskSignals
 	Stats   []DiffStat
 	Signals []RiskSignal
 	// OnlyPassiveContentChanges is true only when every authored path is a
@@ -176,6 +177,14 @@ func ClassifyRisk(input RiskInput) (RiskLevel, error) {
 	if hasHighSignal(input.Signals) || touchesHotPath(input.Stats) {
 		return RiskHigh, nil
 	}
+	if input.facts != nil && input.facts.CoverageComplete {
+		if input.facts.UnchangedDependents > 0 {
+			return RiskHigh, nil
+		}
+		if input.facts.TestsOnly {
+			return RiskLow, nil
+		}
+	}
 	if input.OnlyPassiveContentChanges && !input.TouchesConfiguration {
 		return RiskLow, nil
 	}
@@ -187,8 +196,13 @@ func ClassifyRisk(input RiskInput) (RiskLevel, error) {
 // tell a human why a tier was chosen without re-deriving review authority.
 func riskLevelFromReasons(reasons []RiskReason) RiskLevel {
 	for _, reason := range reasons {
-		if reason.Signal != "" {
+		if reason.Signal != "" || reason.Code == "facts_unchanged_dependents" {
 			return RiskHigh
+		}
+	}
+	for _, reason := range reasons {
+		if reason.Code == "facts_tests_only_change" {
+			return RiskLow
 		}
 	}
 	if len(reasons) == 1 && reasons[0].Code == RiskReasonNonExecutableOnly {
@@ -293,7 +307,32 @@ func (builder SnapshotBuilder) AssessSnapshotRisk(ctx context.Context, snapshot 
 		onlyPassiveContent = onlyPassiveContent && !contradicted && isPassiveContentCandidateStat(stat)
 		touchesConfiguration = touchesConfiguration || isConfigurationReviewPath(stat.Path)
 	}
+	var facts *FactsRiskSignals
+	if root, rootErr := builder.repositoryRoot(ctx); rootErr == nil {
+		paths := make([]string, 0, len(stats))
+		for _, stat := range stats {
+			paths = append(paths, stat.Path)
+		}
+		facts, _ = ReadFactsRiskSignals(root, snapshot.BaseTree, snapshot.CandidateTree, paths)
+	}
+	if facts != nil && facts.CoverageComplete {
+		if facts.TestsOnly && len(processReasons) == 0 && len(riskSignalsFromReasons(reasons)) == 0 {
+			reasons = append(removeFallbackRiskReasons(reasons), RiskReason{Code: "facts_tests_only_change"})
+		}
+		if facts.UnchangedDependents > 0 {
+			reasons = append(removeFallbackRiskReasons(reasons), RiskReason{Code: "facts_unchanged_dependents"})
+		}
+		if facts.SymbolSurfaceDelta > 0 {
+			if len(reasons) == 1 && reasons[0].Code == RiskReasonNonExecutableOnly {
+				reasons = nil
+			}
+			reasons = append(reasons, RiskReason{Code: "facts_symbol_surface_delta"})
+			onlyPassiveContent = false
+		}
+		reasons = canonicalRiskReasons(reasons)
+	}
 	risk, err := ClassifyRisk(RiskInput{
+		facts: facts,
 		Stats: stats, Signals: riskSignalsFromReasons(reasons),
 		OnlyPassiveContentChanges: onlyPassiveContent, TouchesConfiguration: touchesConfiguration,
 	})
