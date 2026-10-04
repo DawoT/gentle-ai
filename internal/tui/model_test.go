@@ -7105,6 +7105,35 @@ func TestInitializeModelPickerWorkingDirectoryFailureShowsDiscoveryFallback(t *t
 }
 
 func TestRuntimeCatalogDiscoveryIgnoresStaleProjectResults(t *testing.T) {
+	testRuntimeCatalogDiscoveryIgnoresStaleProjectResults(t, false)
+}
+
+func TestRuntimeCatalogDiscoveryPreservesTestOwnedConfiguredProviderThroughStaleResults(t *testing.T) {
+	testRuntimeCatalogDiscoveryIgnoresStaleProjectResults(t, true)
+}
+
+func testRuntimeCatalogDiscoveryIgnoresStaleProjectResults(t *testing.T, configured bool) {
+	t.Helper()
+	// Effective config is resolved independently of modelPickerSettingsPath.
+	// Own every global lookup directory and stop project lookup at .git.
+	for _, key := range []string{"HOME", "USERPROFILE", "XDG_CONFIG_HOME", "OPENCODE_CONFIG_DIR"} {
+		t.Setenv(key, t.TempDir())
+	}
+	projectRoot := t.TempDir()
+	projectA := filepath.Join(projectRoot, "project-a")
+	projectB := filepath.Join(projectRoot, "project-b")
+	for _, dir := range []string{projectA, projectB} {
+		if err := os.MkdirAll(filepath.Join(dir, ".git"), 0o700); err != nil {
+			t.Fatalf("create project boundary: %v", err)
+		}
+	}
+	if configured {
+		// This legacy provider schema is also exercised by opencode config tests.
+		path := filepath.Join(os.Getenv("OPENCODE_CONFIG_DIR"), "opencode.json")
+		if err := os.WriteFile(path, []byte(`{"provider":{"test-owned-configured":{"models":{"test-owned-tools":{"tool_call":true}}}}}`), 0o600); err != nil {
+			t.Fatalf("write test-owned effective config: %v", err)
+		}
+	}
 	originalDiscover := modelPickerCatalogDiscoverer
 	originalDir := modelPickerWorkingDir
 	originalSettingsPath := modelPickerSettingsPath
@@ -7117,7 +7146,8 @@ func TestRuntimeCatalogDiscoveryIgnoresStaleProjectResults(t *testing.T) {
 	if err := os.WriteFile(settingsPath, []byte(`{"provider":{"poison":{"models":{"private":{"tool_call":true}}}}}`), 0o600); err != nil {
 		t.Fatalf("write poisoned settings: %v", err)
 	}
-	dirs := []string{"project-a", "project-b"}
+	// The poisoned settings file is outside all effective config lookup roots.
+	dirs := []string{projectA, projectB}
 	modelPickerWorkingDir = func() (string, error) {
 		dir := dirs[0]
 		dirs = dirs[1:]
@@ -7125,7 +7155,8 @@ func TestRuntimeCatalogDiscoveryIgnoresStaleProjectResults(t *testing.T) {
 	}
 	modelPickerSettingsPath = func() string { return settingsPath }
 	modelPickerCatalogDiscoverer = func(_ context.Context, dir string) (map[string]opencode.Provider, error) {
-		return map[string]opencode.Provider{dir: {ID: dir, Models: map[string]opencode.Model{"runtime": {ID: "runtime", ToolCall: true}}}}, nil
+		id := filepath.Base(dir)
+		return map[string]opencode.Provider{id: {ID: id, Models: map[string]opencode.Model{"runtime": {ID: "runtime", ToolCall: true}}}}, nil
 	}
 
 	m := NewModel(system.DetectionResult{}, "dev")
@@ -7134,21 +7165,31 @@ func TestRuntimeCatalogDiscoveryIgnoresStaleProjectResults(t *testing.T) {
 	m.Screen = ScreenWelcome
 	commandB := m.initializeModelPicker()
 	m.Screen = ScreenModelPicker
+	assertCatalog := func(state Model, phase string) {
+		t.Helper()
+		if configured {
+			if got := state.ModelPicker.AvailableIDs; len(got) != 2 || got[0] != "project-b" || got[1] != "test-owned-configured" {
+				t.Fatalf("%s: configured and active runtime providers = %v", phase, got)
+			}
+			if !state.ModelPicker.Providers["test-owned-configured"].Models["test-owned-tools"].ToolCall {
+				t.Fatalf("%s: configured tool-capable model was not retained", phase)
+			}
+		} else if len(state.ModelPicker.AvailableIDs) != 1 || state.ModelPicker.AvailableIDs[0] != "project-b" {
+			t.Fatalf("%s: active catalog = %v, want project-b only", phase, state.ModelPicker.AvailableIDs)
+		}
+		if _, ok := state.ModelPicker.Providers["poison"]; ok {
+			t.Fatalf("%s: runtime picker used poisoned out-of-scope settings", phase)
+		}
+	}
 	updated, _ := m.Update(commandB().(screens.RuntimeCatalogDiscoveryMsg))
 	m = updated.(Model)
+	assertCatalog(m, "after active B")
 	updated, _ = m.Update(commandA().(screens.RuntimeCatalogDiscoveryMsg))
 	m = updated.(Model)
-	if len(m.ModelPicker.AvailableIDs) != 1 || m.ModelPicker.AvailableIDs[0] != "project-b" {
-		t.Fatalf("stale result replaced active catalog: %v", m.ModelPicker.AvailableIDs)
-	}
-	if _, ok := m.ModelPicker.Providers["poison"]; ok {
-		t.Fatal("runtime picker used the private configured provider")
-	}
+	assertCatalog(m, "after stale A")
 	m.Screen = ScreenWelcome
 	updated, _ = m.Update(commandB().(screens.RuntimeCatalogDiscoveryMsg))
-	if got := updated.(Model).ModelPicker.AvailableIDs; len(got) != 1 || got[0] != "project-b" {
-		t.Fatalf("result applied after leaving picker: %v", got)
-	}
+	assertCatalog(updated.(Model), "after leaving picker")
 }
 
 // ─── ODD installer and Configure models back-row regression ─────────────────

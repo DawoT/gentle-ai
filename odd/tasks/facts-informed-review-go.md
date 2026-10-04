@@ -4,7 +4,8 @@
 
 Consume Pi Facts in Go-side prompts/risk without changing review authority,
 verdict admission, frozen tree/blob bindings or prompt ownership.
-Fork /home/deuz/projects/gentle-ai; branch odd/facts-informed-review-go.
+Fork /home/deuz/projects/gentle-ai; initial branch odd/facts-informed-review-go.
+User subsequently selected MAIN in both clones; main worktree .pi/main-live-completion.
 User explicitly prioritizes live dogfooding and authorizes rebuilding the selected
 dev runtime despite native reviewer quota. Local commits authorized; no push,
 PR, merge, model switch, RDD-disable or implicit approval. Preserve unrelated edits.
@@ -12,13 +13,15 @@ PR, merge, model switch, RDD-disable or implicit approval. Preserve unrelated ed
 ## Historical units
 
 - [x] S1: optional digest 8d63b250; review-8827dc7ba2d2a78f consumed.
-- [ ] S2: signals fa80c920; review-2c6651e012703454 consumed ecc33345…;
-  reopened for real-cache compatibility. Facts reasons: tests-only, dependents,
+- [x] S2: signals fa80c920; review-2c6651e012703454 consumed ecc33345…;
+  real-cache compatibility/positive live proof completed on MAIN c14c3c15.
+  Facts reasons: tests-only, dependents,
   symbol surface delta. Informational backlog: base-walk bound/tier/failure coverage.
 - [x] S3/S4: disproved fixed-ancestor premise, abandon discoverability 7c6bae23;
   review-de227db1f4183221 consumed.
-- [ ] S5: closure reopened; historical 79 packages pass, pre-existing internal/tui
-  failure. Full suite has not been rerun. Strings/prompt size do not prove S1 live.
+- [x] S5 functional closure: full go test ./... now GREEN after hermetic TUI
+  fixture repair; vet/build GREEN. Native approval remains L2, not claimed.
+  S1 actual real-data unbound composer proved; native reviewer delivery still pending.
 
 ## Corrective units and evidence
 
@@ -34,7 +37,10 @@ PR, merge, model switch, RDD-disable or implicit approval. Preserve unrelated ed
   Zero prepared/submitted verdicts, no approval/ack. Fresh STATUS reconciled.
   Invalid bindingRef/correctionLines attempts were parent orchestration errors,
   no authority mutation. Resume exact fresh STATUS; do not replay old binding.
-- [ ] L3: PARTIAL / BLOCKED positive Facts acceptance; live verification executed.
+- [x] L3: positive Facts acceptance COMPLETE with clean MAIN c14c3c15 DEV,
+  SHAf9aa6d66c1bc4db84b16f1ddb0afb145f8867da234882006601067a99d2fbead.
+  Actual CLI/facade passive/facts_tests_only_change versus missing-cache medium;
+  same trees/cache pointer, no reindex. Prior deployments retained as history:
   Second rebuild installed13f49df68e8752a8362ffd6e9c431f2f23a8e216,
   SHA613cde7e1277b87f39ea3aebf04548666c9025729084d2b9fc58f954c7e6a8ee.
   Exact previous executable backup under .gentle-ai/dogfooding/13f49df6/gentle-ai.old.
@@ -50,7 +56,9 @@ PR, merge, model switch, RDD-disable or implicit approval. Preserve unrelated ed
   source inventory must be verified against exact frozen trees, not blindly
   skipped. Batch/bound lookup; accept only verified JSON resource vertices.
   Missing/invalid/unresolved/unsupported targets remain misses. Test import of
-  production resource must not lower tier; changed unindexed JSON stays conservative.
+  production resource initially withdrew tests-only under the symmetric guard;
+  M2b supersedes that with directed production consumers. Changed unindexed JSON
+  and incoming production-to-test/resource consumers stay conservative.
   TDD scoped to facts_risk_signals.go and facts_risk_signals_test.go, then independent
   checks, corrective commit, rebuild and identical live comparison.
 
@@ -58,7 +66,7 @@ Incident retained: unsafe 8c6749fb was committed despite unresolved failure.
 Its independent-generation/Markdown root-cause claims were false/unproven;
 actual guard was ModuleEdges, not blobs. No history rewriting or test relaxation.
 
-## Real live probe (all immutable real data)
+## Earlier live probes before MAIN completion (immutable real data)
 
 Registered same-clone worktrees under parent gentle-shell .pi/:
 facts-live-07cefa0b (real cache), facts-live-control-07cefa0b (no cache).
@@ -111,8 +119,9 @@ absent from both trees. Do not relabel this as safe nonlocal to force low tier.
 This demonstrates functioning conservative fallback, NOT positive Facts enrichment.
 Verifier initial wrong --root flag failed before valid --cwd rerun, no mutation.
 
-Next: scoped read-only investigation of this dependency boundary and honest miss
-diagnostics; positive S2 acceptance/S1 live digest/full suite remain pending.
+The misses above were resolved by the bounded MAIN follow-up below. Positive S2,
+actual S1 unbound component and full functional suite are complete; native reviewer
+delivery/admitted closure remains externally blocked, not fabricated.
 L2 reviewer quota remains blocked; no approval/receipt/publishing claim.
 All backups and both registered worktrees retained; main cache untouched.
 
@@ -152,3 +161,17 @@ preserves identical ordinary bytes after removing Facts section. Immediate GREEN
 no invented RED. Test has explicitly unbound/empty authority envelope: component
 proof, NOT native materialized-reviewer delivery or admission. Native quota remains.
 Default CI skips this external-fixture characterization unless both roots supplied.
+
+Current deployed executable: c14c3c156406806f903544720821c60f0cd757ad, version4.0.0,
+VCSmodified=false, SHA f9aa6d66c1bc4db84b16f1ddb0afb145f8867da234882006601067a99d2fbead.
+Exactbackup e780 underparent .gentle-ai/dogfooding/c14c3c15; olderbackups retained.
+Actual positive CLI and primary facade: passive/facts_tests_only_change; negative
+medium/executable_change, both exit0. No cache/pointer/tree/selector changes.
+
+Final TUI suite failure was reproduced on unchanged13718b38: effective-config
+lookup admitted ambient provider alongside project-b. Hermetic test-owned HOME,
+XDG/config directories and absolute Git-boundary projects preserve exact assertions;
+controlled configured-provider+B survives staleA. Existing failure RED->GREEN,
+production behavior and user configuration unchanged. Full go test ./... -count=1,
+go vet ./... and go build ./... passed; default3real-fixture tests opt-in skipped.
+Test-only final commit does not require rebuilding unchanged production executable.
