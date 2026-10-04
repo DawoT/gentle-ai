@@ -243,7 +243,7 @@ func runReviewLensContext(args []string, help io.Writer, deps reviewLensContextD
 	defer func() {
 		payload, err = reviewLensContextCleanup(ctx, payload, err, func() error { return deps.close(authority.Inspector) })
 	}()
-	block, err := reviewLensContextBlock(ctx, deps, authority.Inspector, authority.Binding, authority.Subject, authority.Frozen, authority.RuntimeAgent)
+	block, err := reviewLensContextBlock(ctx, deps, authority.Inspector, authority.Binding, authority.Subject, authority.Frozen, authority.RuntimeAgent, authority.Root)
 	if err != nil {
 		return nil, err
 	}
@@ -310,7 +310,7 @@ func reviewLensContextBudgetProbe(
 		_, assemblyErr := reviewLensContextBlock(assemblyContext, deps, inspector, reviewLensContextBinding{
 			Lineage: state.LineageID, Target: state.InitialSnapshot.Identity, Lens: lens, Order: order,
 			Revision: revision, RepositoryContext: repositoryContext, SubjectHash: subject.SubjectHash,
-		}, subject, frozen, state.RuntimeAgent)
+		}, subject, frozen, state.RuntimeAgent, repo)
 		var refusal *reviewLensContextError
 		if errors.As(assemblyErr, &refusal) && refusal.Code == "lens_context_budget_exceeded" {
 			return reviewLensContextOverBudget, nil
@@ -425,6 +425,7 @@ var reviewLensContextStartBudgetReason = reviewPreflightReason{
 // resolveReviewLensAuthority is the only place that turns an opaque repository
 // context and a lens name into native authority.
 type reviewLensAuthority struct {
+	Root         string
 	Store        reviewtransaction.CompactStore
 	Binding      reviewLensContextBinding
 	Subject      reviewtransaction.ArtifactSubject
@@ -486,7 +487,7 @@ func resolveReviewLensAuthority(ctx context.Context, deps reviewLensContextDeps,
 	}
 
 	return reviewLensAuthority{
-		Store: store,
+		Root: root, Store: store,
 		Binding: reviewLensContextBinding{
 			Lineage: binding.LineageID, Target: binding.TargetIdentity, Lens: state.SelectedLenses[order], Order: order,
 			Revision: binding.Revision, RepositoryContext: repositoryContext, SubjectHash: subject.SubjectHash,
@@ -619,7 +620,7 @@ func reviewLensContextGeneratedSummaryFor(index int, entry reviewtransaction.Cha
 func reviewLensContextBlock(
 	ctx context.Context, deps reviewLensContextDeps, inspector reviewLensCandidateInspector,
 	binding reviewLensContextBinding, subject reviewtransaction.ArtifactSubject, frozen reviewtransaction.FrozenCandidateContext,
-	runtime string,
+	runtime string, roots ...string,
 ) ([]byte, error) {
 	// RepositoryRoot stays empty: this block is produced only for an opaque
 	// binding, and a reviewer transcript never carries a provider path.
@@ -692,6 +693,8 @@ func reviewLensContextBlock(
 			return nil, err
 		}
 	}
+	// Materialize mandatory evidence first; optional facts must never displace a patch.
+	patchStart := block.Len()
 	for index, entry := range frozen.ChangedPathManifest {
 		if entry.Generated {
 			payload, err := reviewLensContextGeneratedSummaryFor(index, entry, frozen, numstats)
@@ -720,6 +723,19 @@ func reviewLensContextBlock(
 			return nil, err
 		}
 	}
+	if len(roots) > 0 {
+		if digest := reviewLensFactsDigest(ctx, roots[0], frozen); digest != "" {
+			size := len(reviewLensFactsHeader + "\n" + strings.TrimSpace(digest) + "\n" + reviewLensFactsHeader + "_END\n")
+			if size <= budget {
+				patches := append([]byte(nil), block.Bytes()[patchStart:]...)
+				block.Truncate(patchStart)
+				if err := consume(reviewLensFactsHeader, reviewLensFactsHeader+"_END", []byte(digest)); err != nil {
+					return nil, err
+				}
+				block.Write(patches)
+			}
+		}
+	}
 	// Reserved above, so this write can never take the block past the budget.
 	block.WriteString(terminator)
 	return block.Bytes(), nil
@@ -741,7 +757,7 @@ func reviewLensContextInstructionText(binding reviewLensContextBinding, paths in
 	}
 	return fmt.Sprintf(`You are the %s lens of one bounded Gentle AI review. %s
 
-Scope. The %s sections below are the complete and only view of this candidate: all %d changed paths are represented in the canonical manifest order carried by %s. Authored paths carry full immutable patches; generated paths carry immutable metadata summaries without content hunks. Do not read the working tree, the index, HEAD, or any other file, and do not run any command. Nothing outside these sections is part of this candidate, and anything you cannot see here is not evidence.
+Scope. The %s sections below are the complete and only view of this candidate: all %d changed paths are represented in the canonical manifest order carried by %s. Authored paths carry full immutable patches; generated paths carry immutable metadata summaries without content hunks. The optional Facts subject digest is advisory context derived from the repository facts cache pinned to the candidate tree; patches remain primary evidence. Do not read the working tree, the index, HEAD, or any other file, and do not run any command. Nothing outside these sections is part of this candidate, and anything you cannot see here is not evidence.
 
 Causality. Report only what this candidate caused. Give every BLOCKER or CRITICAL finding an evidence_class and a causal_disposition, and mark what the base already contained as pre-existing or base-only rather than as a blocker.
 
