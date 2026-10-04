@@ -144,3 +144,11 @@ Live actual-reader RED->GREEN: complete TestsOnly=true, zero dependents/delta;
 missing-cache control nil. Independent focused/live/vet checks passed. Two opt-in
 real-fixture tests skip unless GENTLE_FACTS_LIVE_ROOT or CONTROL_ROOT is supplied.
 Installed-runtime acceptance still requires rebuilding this new main commit.
+
+S1 real-data characterization: authentic SnapshotBuilder/Inspector blob metadata,
+unchanged real producer cache pair and missing-cache control; actual helper digest
+is inserted exactly once by bounded composer before all4immutable patches. Control
+preserves identical ordinary bytes after removing Facts section. Immediate GREEN,
+no invented RED. Test has explicitly unbound/empty authority envelope: component
+proof, NOT native materialized-reviewer delivery or admission. Native quota remains.
+Default CI skips this external-fixture characterization unless both roots supplied.
