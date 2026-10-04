@@ -336,6 +336,30 @@ func factsRiskKnownStandardImport(importer, specifier string, pythonProof func()
 	return false
 }
 
+// factsRiskHasProductionConsumer follows target -> importer edges. Outgoing
+// dependencies of changed tests are irrelevant; consumers, including consumers
+// reached through unchanged tests, are not. Each vertex is visited once.
+func factsRiskHasProductionConsumer(reverse map[string][]string, changed map[string]bool) bool {
+	seen := map[string]bool{}
+	queue := make([]string, 0, len(changed))
+	for p := range changed {
+		seen[p] = true
+		queue = append(queue, p)
+	}
+	for i := 0; i < len(queue); i++ {
+		for _, importer := range reverse[queue[i]] {
+			if !isTestRiskPath(importer) {
+				return true
+			}
+			if !seen[importer] {
+				seen[importer] = true
+				queue = append(queue, importer)
+			}
+		}
+	}
+	return false
+}
+
 // ReadFactsRiskSignals reads frozen evidence only; invalid caches are optional misses.
 func ReadFactsRiskSignals(repoRoot, baseTree, candidateTree string, changedPaths []string) (*FactsRiskSignals, error) {
 	if repoRoot == "" || !factsRiskID(baseTree) || !factsRiskID(candidateTree) || len(changedPaths) == 0 {
@@ -449,6 +473,12 @@ func ReadFactsRiskSignals(repoRoot, baseTree, candidateTree string, changedPaths
 		if !ok || db.generation.Metadata.ModuleEdges == nil {
 			return nil, nil
 		}
+		// Both file and resource inventories are capped at 65,536 vertices.
+		// Bound edges too, including duplicates, before allocating the graph.
+		if len(db.generation.Metadata.ModuleEdges) > 262144 {
+			return nil, nil
+		}
+		reverse := map[string][]string{}
 		for _, e := range db.generation.Metadata.ModuleEdges {
 			_, importerOK := db.files[e.Importer]
 			_, targetOK := db.files[e.Target]
@@ -467,12 +497,15 @@ func ReadFactsRiskSignals(repoRoot, baseTree, candidateTree string, changedPaths
 			if !targetOK || (e.Evidence != "filesystem" && e.Evidence != "typescript") {
 				return nil, nil
 			}
-			if (changed[e.Importer] || changed[e.Target]) && (!isTestRiskPath(e.Importer) || !isTestRiskPath(e.Target)) {
-				result.TestsOnly = false
-			}
+			reverse[e.Target] = append(reverse[e.Target], e.Importer)
 			if changed[e.Target] && !isTestRiskPath(e.Target) && !changed[e.Importer] {
 				dependents[e.Importer] = true
 			}
+		}
+		// Assess snapshots separately: a consumer present only before deletion
+		// or only after addition still invalidates tests-only evidence.
+		if factsRiskHasProductionConsumer(reverse, changed) {
+			result.TestsOnly = false
 		}
 	}
 	result.UnchangedDependents = len(dependents)

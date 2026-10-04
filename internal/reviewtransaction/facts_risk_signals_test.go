@@ -21,8 +21,11 @@ func TestFactsRiskSignalsJSONResources(t *testing.T) {
 		wantSignals, testsOnly                            bool
 	}{
 		{"real-production-edge", "lib/runtime-metrics-native.ts", "contracts/telemetry/runtime-aggregate-v1.schema.json", "../contracts/telemetry/runtime-aggregate-v1.schema.json", "filesystem", "", true, true},
-		{"test-production", "tests/importer.test.ts", "contracts/data.json", "../contracts/data.json", "filesystem", "", true, false},
+		// Outgoing imports of unchanged production/resources do not make tests consumers' production inputs.
+		{"test-production", "tests/importer.test.ts", "contracts/data.json", "../contracts/data.json", "filesystem", "", true, true},
 		{"test-test", "tests/importer.test.ts", "tests/data.json", "./data.json", "filesystem", "", true, true},
+		{"production-consumer-with-resource", "tests/importer.test.ts", "tests/data.json", "./data.json", "filesystem", "incoming", true, false},
+		{"production-transitive-consumer-with-resource", "tests/importer.test.ts", "tests/data.json", "./data.json", "filesystem", "transitive", true, false},
 		{"missing-base", "tests/importer.test.ts", "tests/data.json", "./data.json", "filesystem", "missing-base", false, false},
 		{"missing-candidate", "tests/importer.test.ts", "tests/data.json", "./data.json", "filesystem", "missing-candidate", false, false},
 		{"typescript-resource", "tests/importer.test.ts", "tests/data.json", "./data.json", "typescript", "", false, false},
@@ -82,6 +85,12 @@ func TestFactsRiskSignalsJSONResources(t *testing.T) {
 				if changed != tc.importer {
 					paths = append(paths, changed)
 				}
+				if tc.mode == "incoming" || tc.mode == "transitive" {
+					paths = append(paths, "lib/consumer.ts")
+				}
+				if tc.mode == "transitive" {
+					paths = append(paths, "tests/bridge.test.ts")
+				}
 				for _, p := range paths {
 					content := "export const value = 1;\n"
 					if p == changed && depth == 1 {
@@ -123,7 +132,14 @@ func TestFactsRiskSignalsJSONResources(t *testing.T) {
 				tree := git("", "write-tree", "--missing-ok")
 				commit := git("fixture\n", "commit-tree", tree)
 				baseTree, candidateTree = candidateTree, tree
-				parent = artifact("generations", map[string]any{"format": "facts-generation-v1", "depth": depth, "parent": parent, "metadata": map[string]any{"version": "1.3.0", "source": map[string]string{"kind": "commit", "commit": commit, "scope": "."}, "moduleEdges": []map[string]string{{"importer": tc.importer, "target": tc.target, "specifier": tc.specifier, "evidence": tc.evidence}}}, "upserts": refs, "deleted": []string{}})
+				edges := []map[string]string{{"importer": tc.importer, "target": tc.target, "specifier": tc.specifier, "evidence": tc.evidence}}
+				if tc.mode == "incoming" {
+					edges = append(edges, map[string]string{"importer": "lib/consumer.ts", "target": changed, "evidence": "typescript"})
+				}
+				if tc.mode == "transitive" {
+					edges = append(edges, map[string]string{"importer": "lib/consumer.ts", "target": "tests/bridge.test.ts", "evidence": "typescript"}, map[string]string{"importer": "tests/bridge.test.ts", "target": changed, "evidence": "typescript"})
+				}
+				parent = artifact("generations", map[string]any{"format": "facts-generation-v1", "depth": depth, "parent": parent, "metadata": map[string]any{"version": "1.3.0", "source": map[string]string{"kind": "commit", "commit": commit, "scope": "."}, "moduleEdges": edges}, "upserts": refs, "deleted": []string{}})
 			}
 			b, _ := json.Marshal(map[string]string{"format": "facts-pointer-v1", "generation": parent})
 			if err := os.WriteFile(filepath.Join(cache, "facts.json"), b, 0600); err != nil {
@@ -259,7 +275,8 @@ func TestFactsRiskSignals(t *testing.T) {
 		"root-content-base", "root-content-candidate",
 	} {
 		want, reason := RiskMedium, ""
-		if mode == "unscoped" {
+		// A changed test's outgoing production dependency is not a consumer.
+		if mode == "unscoped" || mode == "cross-out" {
 			want, reason = RiskLow, "facts_tests_only_change"
 		}
 		cases = append(cases, struct {
@@ -299,6 +316,31 @@ func TestFactsRiskSignals(t *testing.T) {
 			want              RiskLevel
 			reason            string
 		}{tc.mode, tc.path, tc.mode, 0, 0, want, reason})
+	}
+	for _, tc := range []struct {
+		mode string
+		low  bool
+	}{
+		{"outgoing", true}, {"incoming", false}, {"transitive", false},
+		{"cycle-test", true}, {"cycle-production", false},
+		{"base-only", false}, {"candidate-only", false},
+		{"deleted-test", false}, {"deleted-consumer", false}, {"changed-production", false},
+		{"incoming-resource", false}, {"transitive-resource", false},
+	} {
+		want, reason := RiskMedium, ""
+		if tc.low {
+			want, reason = RiskLow, "facts_tests_only_change"
+		}
+		p := "tests/change.test.ts"
+		if strings.HasSuffix(tc.mode, "-resource") {
+			p = "tests/data.json"
+		}
+		cases = append(cases, struct {
+			name, path, mode  string
+			dependents, delta int
+			want              RiskLevel
+			reason            string
+		}{"graph-" + tc.mode, p, "graph-" + tc.mode, 0, 0, want, reason})
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -345,9 +387,18 @@ func TestFactsRiskSignals(t *testing.T) {
 				if tc.mode == "mixed" || tc.mode == "cross-node" || tc.mode == "dependency-cross" || tc.mode == "dependency-cross-out" || tc.mode == "dependency-sibling" {
 					paths = append(paths, "dep.go")
 				}
+				if strings.HasPrefix(tc.mode, "graph-") {
+					paths = append(paths, "tests/bridge.test.ts", "lib/consumer.ts")
+					if tc.mode == "graph-deleted-test" && depth == 1 {
+						paths = paths[1:]
+					}
+					if tc.mode == "graph-deleted-consumer" && depth == 1 {
+						paths = []string{tc.path, "tests/bridge.test.ts"}
+					}
+				}
 				for i, p := range paths {
 					content := "package example\n"
-					if depth == 1 && i == 0 {
+					if depth == 1 && (p == tc.path || tc.mode == "graph-changed-production" && p == "lib/consumer.ts") {
 						content += "// changed\n"
 					}
 					blob := git(content, "hash-object", "-w", "--stdin")
@@ -357,7 +408,7 @@ func TestFactsRiskSignals(t *testing.T) {
 						symbols = append(symbols, map[string]any{"name": "New", "kind": "function", "signature": "New()", "isExported": true})
 					}
 					refs[p] = artifact("objects", map[string]any{"path": p, "sha": blob, "symbols": symbols})
-					if i > 0 {
+					if i > 0 && !strings.HasPrefix(tc.mode, "graph-") {
 						evidence := "filesystem"
 						if tc.mode == "resolved-typescript" {
 							evidence = "typescript"
@@ -376,6 +427,28 @@ func TestFactsRiskSignals(t *testing.T) {
 				}
 				if tc.mode == "unresolved" {
 					edges = append(edges, map[string]string{"importer": tc.path, "target": "", "evidence": "unresolved"})
+				}
+				if strings.HasPrefix(tc.mode, "graph-") {
+					add := func(importer, target string) {
+						edges = append(edges, map[string]string{"importer": importer, "target": target, "evidence": "typescript"})
+					}
+					active := !(tc.mode == "graph-base-only" && depth == 1 || tc.mode == "graph-candidate-only" && depth == 0 || (tc.mode == "graph-deleted-test" || tc.mode == "graph-deleted-consumer") && depth == 1)
+					if active {
+						switch tc.mode {
+						case "graph-outgoing":
+							add(tc.path, "lib/consumer.ts")
+						case "graph-incoming", "graph-incoming-resource", "graph-deleted-consumer":
+							add("lib/consumer.ts", tc.path)
+						default:
+							add("tests/bridge.test.ts", tc.path)
+							if tc.mode == "graph-cycle-test" || tc.mode == "graph-cycle-production" {
+								add(tc.path, "tests/bridge.test.ts")
+							}
+							if tc.mode != "graph-cycle-test" {
+								add("lib/consumer.ts", "tests/bridge.test.ts")
+							}
+						}
+					}
 				}
 				// These edges mirror Pi's unresolved schema, including reason/specifier.
 				if specifier, ok := map[string]string{
@@ -530,9 +603,20 @@ func TestFactsRiskSignals(t *testing.T) {
 				if tc.mode == "unrelated-base" {
 					generationDepth, parent = 0, ""
 				}
-				parent = artifact("generations", map[string]any{"format": "facts-generation-v1", "depth": generationDepth, "parent": parent, "metadata": metadata, "upserts": refs, "deleted": []string{}})
+				parent = artifact("generations", map[string]any{"format": "facts-generation-v1", "depth": generationDepth, "parent": parent, "metadata": metadata, "upserts": refs, "deleted": func() []string {
+					if depth == 1 && tc.mode == "graph-deleted-test" {
+						return []string{tc.path}
+					}
+					if depth == 1 && tc.mode == "graph-deleted-consumer" {
+						return []string{"lib/consumer.ts"}
+					}
+					return []string{}
+				}()})
 			}
 			snapshot := Snapshot{BaseTree: baseTree, CandidateTree: candidateTree, Paths: []string{tc.path}}
+			if tc.mode == "graph-deleted-consumer" || tc.mode == "graph-changed-production" {
+				snapshot.Paths = append(snapshot.Paths, "lib/consumer.ts")
+			}
 			builder := SnapshotBuilder{Repo: root}
 			if tc.mode == "missing-path" {
 				pointer, err := json.Marshal(map[string]string{"format": "facts-pointer-v1", "generation": parent})
@@ -581,9 +665,9 @@ func TestFactsRiskSignals(t *testing.T) {
 			if tc.reason == "" && !reflect.DeepEqual(got, baseline) {
 				t.Fatalf("optional miss changed output: %v != %v", got, baseline)
 			}
-			signals, e := ReadFactsRiskSignals(root, baseTree, candidateTree, []string{tc.path})
+			signals, e := ReadFactsRiskSignals(root, baseTree, candidateTree, snapshot.Paths)
 			check(e)
-			if tc.reason == "" && tc.mode != "" && tc.mode != "mixed" && tc.mode != "cross-node" && tc.mode != "dependency-cross" && tc.mode != "dependency-cross-out" && signals != nil {
+			if tc.reason == "" && tc.mode != "" && tc.mode != "mixed" && tc.mode != "cross-node" && tc.mode != "dependency-cross" && tc.mode != "dependency-cross-out" && !strings.HasPrefix(tc.mode, "graph-") && signals != nil {
 				t.Fatalf("incomplete evidence returned signals: %+v", signals)
 			}
 			if tc.reason != "" && (signals == nil || !signals.CoverageComplete || signals.UnchangedDependents != tc.dependents || signals.SymbolSurfaceDelta != tc.delta) {

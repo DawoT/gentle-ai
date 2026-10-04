@@ -135,3 +135,12 @@ modules/packages/nonregular/archive ambiguity and failures still omit signals.
 Default fixture matrix RED->GREEN; independent focused/vet/build checks passed.
 Real reader now returns complete nonnil signals but TestsOnly=false; directed
 production-consumer semantics and opt-in live RED remain M2b, not claimed complete.
+
+M2b corrects directed reachability: outgoing changed-test dependencies on unchanged
+production do not imply production consumes changed tests. Either snapshot's direct
+or transitive production importer (including cycles/untouched-test bridges) withdraws
+tests-only evidence. Unknown/module/blob/shadow guards and process precedence remain.
+Live actual-reader RED->GREEN: complete TestsOnly=true, zero dependents/delta;
+missing-cache control nil. Independent focused/live/vet checks passed. Two opt-in
+real-fixture tests skip unless GENTLE_FACTS_LIVE_ROOT or CONTROL_ROOT is supplied.
+Installed-runtime acceptance still requires rebuilding this new main commit.
