@@ -181,6 +181,31 @@ func TestFactsRiskSignalsDependencyProofFailures(t *testing.T) {
 	}
 }
 
+func TestFactsRiskSignalsStaticGrammarAndPythonProofFailures(t *testing.T) {
+	for _, spec := range []string{"pkg/../file.js", "pkg/./file.js", "pkg/.../file.js", "./pkg/file.js", "/pkg/file.js", "#alias/file.js", "@/file.js", "https://host/file.js", "pkg\\file.js", "pkg/file.js?raw", "pkg/file.js#fragment", "node:path/../fs"} {
+		if factsRiskNonlocalSpecifier(spec) {
+			t.Errorf("unsafe specifier accepted: %q", spec)
+		}
+	}
+	root := t.TempDir()
+	cmd := exec.Command("git", "-C", root, "init")
+	if b, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git init: %v %s", err, b)
+	}
+	for _, tree := range []string{"", "not-a-tree", strings.Repeat("a", 40)} {
+		if factsRiskPythonUnshadowed(root, tree) {
+			t.Errorf("unavailable tree proved unshadowed: %q", tree)
+		}
+	}
+	if factsRiskPythonUnshadowed(filepath.Join(root, "missing"), strings.Repeat("a", 40)) {
+		t.Fatal("missing repo proved unshadowed")
+	}
+	t.Setenv("PATH", "")
+	if factsRiskPythonUnshadowed(root, strings.Repeat("a", 40)) {
+		t.Fatal("missing Git proved unshadowed")
+	}
+}
+
 func TestFactsRiskSignals(t *testing.T) {
 	cases := []struct {
 		name, path, mode  string
@@ -243,6 +268,37 @@ func TestFactsRiskSignals(t *testing.T) {
 			want              RiskLevel
 			reason            string
 		}{"dependency-" + mode, "tests/shell-sidebar-fullscreen.test.ts", "dependency-" + mode, 0, 0, want, reason})
+	}
+	for _, tc := range []struct {
+		mode, path string
+		positive   bool
+	}{
+		{"dotted", "a_test.go", true},
+		{"stdlib-go", "a_test.go", true}, {"stdlib-python", "tests/a.py", true},
+		{"stdlib-sys", "tests/a.py", true},
+		{"stdlib-unknown", "tests/a.py", false}, {"stdlib-relative", "tests/a.py", false},
+		{"stdlib-unknown-go", "a_test.go", false}, {"stdlib-python-go", "a_test.go", false},
+		{"stdlib-missing-importer", "tests/a.py", false}, {"stdlib-wrong-evidence", "tests/a.py", false},
+		{"stdlib-wrong-language", "tests/a.ts", false}, {"stdlib-go-python", "tests/a.py", false},
+		{"stdlib-wrong-reason", "tests/a.py", false}, {"stdlib-filled", "tests/a.py", false},
+		{"stdlib-shadow-file-base", "tests/a.py", false}, {"stdlib-shadow-file-candidate", "tests/a.py", false},
+		{"stdlib-shadow-package-base", "tests/a.py", false}, {"stdlib-shadow-package-candidate", "tests/a.py", false},
+		{"stdlib-shadow-pyc-base", "tests/a.py", false}, {"stdlib-shadow-pyc-candidate", "tests/a.py", false},
+		{"stdlib-shadow-compiled-base", "tests/a.py", false}, {"stdlib-shadow-compiled-candidate", "tests/a.py", false},
+		{"stdlib-shadow-archive-base", "tests/a.py", false}, {"stdlib-shadow-archive-candidate", "tests/a.py", false},
+		{"stdlib-shadow-symlink-base", "tests/a.py", false}, {"stdlib-shadow-symlink-candidate", "tests/a.py", false},
+		{"stdlib-shadow-gitlink-base", "tests/a.py", false}, {"stdlib-shadow-gitlink-candidate", "tests/a.py", false},
+	} {
+		want, reason := RiskMedium, ""
+		if tc.positive {
+			want, reason = RiskLow, "facts_tests_only_change"
+		}
+		cases = append(cases, struct {
+			name, path, mode  string
+			dependents, delta int
+			want              RiskLevel
+			reason            string
+		}{tc.mode, tc.path, tc.mode, 0, 0, want, reason})
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -323,7 +379,7 @@ func TestFactsRiskSignals(t *testing.T) {
 				}
 				// These edges mirror Pi's unresolved schema, including reason/specifier.
 				if specifier, ok := map[string]string{
-					"node": "node:path", "external": "lodash", "scoped": "@scope/pkg/subpath",
+					"node": "node:path", "external": "lodash", "scoped": "@scope/pkg/subpath", "dotted": "@earendil-works/pi-tui/dist/layout.js",
 					"relative": "./helper", "absolute": "/src/helper", "empty-specifier": "",
 					"missing-specifier": "lodash", "unknown-reason": "lodash", "empty-reason": "lodash",
 					"unexpected-target": "lodash", "missing-importer": "lodash", "unknown-importer": "lodash",
@@ -352,6 +408,37 @@ func TestFactsRiskSignals(t *testing.T) {
 						edge["target"], edge["evidence"] = "data.json", "filesystem"
 					}
 					edges = append(edges, edge)
+				}
+				if strings.HasPrefix(tc.mode, "stdlib-") {
+					specs := []string{"ast", "copy", "json"}
+					switch tc.mode {
+					case "stdlib-go":
+						specs = []string{"bytes", "encoding/json", "fmt", "go/ast", "go/parser", "go/printer", "go/token", "os", "strconv", "strings"}
+					case "stdlib-sys":
+						specs = []string{"sys"}
+					case "stdlib-unknown", "stdlib-unknown-go":
+						specs = []string{"custom"}
+					case "stdlib-relative":
+						specs = []string{"./ast"}
+					case "stdlib-go-python":
+						specs = []string{"bytes"}
+					}
+					for _, spec := range specs {
+						edge := map[string]string{"importer": tc.path, "specifier": spec, "evidence": "unresolved", "reason": "language-resolution-not-supported"}
+						if tc.mode == "stdlib-wrong-reason" {
+							edge["reason"] = "unknown-resolution"
+						}
+						if tc.mode == "stdlib-filled" {
+							edge["target"] = tc.path
+						}
+						if tc.mode == "stdlib-missing-importer" {
+							edge["importer"] = "missing.py"
+						}
+						if tc.mode == "stdlib-wrong-evidence" {
+							edge["evidence"] = "unsupported"
+						}
+						edges = append(edges, edge)
+					}
 				}
 				if strings.HasPrefix(tc.mode, "dependency-") {
 					specifier := "../node_modules/@earendil-works/pi-coding-agent/dist/modes/interactive/chat-viewport.js"
@@ -406,6 +493,24 @@ func TestFactsRiskSignals(t *testing.T) {
 				}
 				git("", "read-tree", git(rootEntry, "mktree"))
 				git(entries, "update-index", "--index-info")
+				if strings.HasPrefix(tc.mode, "stdlib-shadow-") && (strings.HasSuffix(tc.mode, "-base") && depth == 0 || strings.HasSuffix(tc.mode, "-candidate") && depth == 1) {
+					p, mode, oid := "nested/ast.py", "100644", git("shadow\n", "hash-object", "-w", "--stdin")
+					switch strings.Split(tc.mode, "-")[2] {
+					case "package":
+						p = "nested/ast/__init__.py"
+					case "pyc":
+						p = "nested/__pycache__/ast.cpython-313.pyc"
+					case "compiled":
+						p = "nested/ast.cpython-313.so"
+					case "archive":
+						p = "nested/vendor.zip"
+					case "symlink":
+						p, mode = "unrelated-link", "120000"
+					case "gitlink":
+						p, mode, oid = "vendor", "160000", git("submodule\n", "commit-tree", git("", "mktree"))
+					}
+					git(fmt.Sprintf("%s %s\t%s\n", mode, oid, p), "update-index", "--index-info")
+				}
 				tree := git("", "write-tree")
 				if rootEntry != "" && strings.Contains(tc.mode, "-empty-") {
 					// An index drops empty directories; construct this root literally.
@@ -440,13 +545,13 @@ func TestFactsRiskSignals(t *testing.T) {
 				}
 				return
 			}
-			if strings.HasPrefix(tc.mode, "dependency-root-") {
+			if strings.HasPrefix(tc.mode, "dependency-root-") || strings.HasPrefix(tc.mode, "stdlib-shadow-") {
 				pointer, _ := json.Marshal(map[string]string{"format": "facts-pointer-v1", "generation": parent})
 				check(os.WriteFile(filepath.Join(cache, "facts.json"), pointer, 0600))
 				signals, err := ReadFactsRiskSignals(root, baseTree, candidateTree, snapshot.Paths)
 				check(err)
 				if signals != nil {
-					t.Fatalf("tracked dependency root returned signals: %+v", signals)
+					t.Fatalf("ambiguous frozen proof returned signals: %+v", signals)
 				}
 				return
 			}

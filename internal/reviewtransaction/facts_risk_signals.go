@@ -126,7 +126,7 @@ func factsRiskExports(f factsRiskFile) map[string]string {
 // Accept only an unambiguous subset of builtin/package syntax. In particular,
 // aliases, relative/absolute paths, traversal, URLs and malformed names remain
 // advisory misses: they cannot prove that a local dependency is absent.
-var factsRiskPackageSpecifier = regexp.MustCompile(`^(@[a-z0-9_-]+/)?[a-z0-9_-]+(/[a-zA-Z0-9_-]+)*$`)
+var factsRiskPackageSpecifier = regexp.MustCompile(`^(@[a-z0-9_-]+/)?[a-z0-9_-]+(/[a-zA-Z0-9_-][a-zA-Z0-9._-]*)*$`)
 var factsRiskBuiltinSpecifier = regexp.MustCompile(`^node:[a-z][a-z0-9_]*(/[a-z][a-z0-9_]*)*$`)
 
 func factsRiskNonlocalSpecifier(specifier string) bool {
@@ -273,6 +273,69 @@ func factsRiskResources(root, tree string, db factsRiskDB, changed map[string]bo
 	return resources, true
 }
 
+// factsRiskPythonUnshadowed proves only a narrow versioned-tree boundary, not
+// runtime sys.path safety. Any nonregular vertex, compiled library or archive
+// makes that proof ambiguous. One bounded inventory covers all supported names.
+func factsRiskPythonUnshadowed(root, tree string) bool {
+	if !factsRiskID(tree) {
+		return false
+	}
+	b, err := runGit(context.Background(), root, nil, nil, "ls-tree", "-r", "-t", "-z", tree)
+	if err != nil || len(b) == 0 || b[len(b)-1] != 0 {
+		return false
+	}
+	entries := bytes.Split(b[:len(b)-1], []byte{0})
+	if len(entries) > 65536 {
+		return false
+	}
+	seen := map[string]bool{}
+	for _, entry := range entries {
+		tab := bytes.IndexByte(entry, '\t')
+		if tab < 0 {
+			return false
+		}
+		fields, p := strings.Fields(string(entry[:tab])), string(entry[tab+1:])
+		normalized, err := normalizeLogicalPath(p)
+		if err != nil || normalized != p || seen[p] || len(fields) != 3 || !factsRiskID(fields[2]) {
+			return false
+		}
+		seen[p] = true
+		if !((fields[0] == "040000" && fields[1] == "tree") || ((fields[0] == "100644" || fields[0] == "100755") && fields[1] == "blob")) {
+			return false
+		}
+		name := strings.ToLower(path.Base(p))
+		for _, module := range []string{"ast", "copy", "json"} {
+			if name == module || name == module+".py" || name == module+".pyw" {
+				return false
+			}
+		}
+		switch path.Ext(name) {
+		case ".pyc", ".pyo", ".so", ".pyd", ".dll", ".dylib", ".zip", ".egg", ".whl", ".tar", ".gz", ".bz2", ".xz", ".tgz", ".tbz2", ".txz", ".z", ".7z", ".rar", ".jar", ".a", ".o":
+			return false
+		}
+	}
+	return true
+}
+
+func factsRiskKnownStandardImport(importer, specifier string, pythonProof func() bool) bool {
+	switch path.Ext(importer) {
+	case ".go":
+		// Go standard-library import paths are not Python-style local lookups.
+		switch specifier {
+		case "bytes", "encoding/json", "fmt", "go/ast", "go/parser", "go/printer", "go/token", "os", "strconv", "strings":
+			return true
+		}
+	case ".py":
+		if specifier == "sys" {
+			return true
+		} // Builtin, not a path-based module.
+		if specifier == "ast" || specifier == "copy" || specifier == "json" {
+			return pythonProof()
+		}
+	}
+	return false
+}
+
 // ReadFactsRiskSignals reads frozen evidence only; invalid caches are optional misses.
 func ReadFactsRiskSignals(repoRoot, baseTree, candidateTree string, changedPaths []string) (*FactsRiskSignals, error) {
 	if repoRoot == "" || !factsRiskID(baseTree) || !factsRiskID(candidateTree) || len(changedPaths) == 0 {
@@ -363,6 +426,20 @@ func ReadFactsRiskSignals(repoRoot, baseTree, candidateTree string, changedPaths
 		}
 		return true
 	}
+	pythonProof := map[string]bool{}
+	pythonUnshadowed := func() bool {
+		for _, tree := range []string{baseTree, candidateTree} {
+			ok, checked := pythonProof[tree]
+			if !checked {
+				ok = factsRiskPythonUnshadowed(repoRoot, tree)
+				pythonProof[tree] = ok
+			}
+			if !ok {
+				return false
+			}
+		}
+		return true
+	}
 	for _, side := range []struct {
 		tree string
 		db   factsRiskDB
@@ -381,6 +458,10 @@ func ReadFactsRiskSignals(repoRoot, baseTree, candidateTree string, changedPaths
 			}
 			if e.Evidence == "unresolved" && e.Target == "" && e.Reason == "module-not-found" && (factsRiskNonlocalSpecifier(e.Specifier) ||
 				(factsRiskRelativeDependency(e.Importer, e.Specifier) && dependencyRootsAbsent())) {
+				continue
+			}
+			if e.Evidence == "unresolved" && e.Target == "" && e.Reason == "language-resolution-not-supported" &&
+				factsRiskKnownStandardImport(e.Importer, e.Specifier, pythonUnshadowed) {
 				continue
 			}
 			if !targetOK || (e.Evidence != "filesystem" && e.Evidence != "typescript") {

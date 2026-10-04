@@ -127,3 +127,11 @@ unknown proofs and unrelated unresolved siblings remain conservative misses.
 Real Git negative matrix and focused risk tests observed RED then GREEN;
 independent focused/package tests, vet/build/diff-check passed. Live acceptance
 requires rebuilding this new main commit and replaying unchanged real snapshots.
+
+Main graph follow-up M2a: safe dotted package subpaths and narrowly known Go
+standard/Python builtin imports are supported; ast/copy/json additionally require
+bounded both-tree no-local-shadow evidence. Unknown language imports, shadow
+modules/packages/nonregular/archive ambiguity and failures still omit signals.
+Default fixture matrix RED->GREEN; independent focused/vet/build checks passed.
+Real reader now returns complete nonnil signals but TestsOnly=false; directed
+production-consumer semantics and opt-in live RED remain M2b, not claimed complete.
