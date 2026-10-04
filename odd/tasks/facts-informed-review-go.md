@@ -34,13 +34,19 @@ PR, merge, model switch, RDD-disable or implicit approval. Preserve unrelated ed
   Zero prepared/submitted verdicts, no approval/ack. Fresh STATUS reconciled.
   Invalid bindingRef/correctionLines attempts were parent orchestration errors,
   no authority mutation. Resume exact fresh STATUS; do not replay old binding.
-- [ ] L3: PENDING remaining positive live acceptance; installed rebuild verified.
+- [ ] L3: PARTIAL / BLOCKED positive Facts acceptance; live verification executed.
+  Second rebuild installed13f49df68e8752a8362ffd6e9c431f2f23a8e216,
+  SHA613cde7e1277b87f39ea3aebf04548666c9025729084d2b9fc58f954c7e6a8ee.
+  Exact previous executable backup under .gentle-ai/dogfooding/13f49df6/gentle-ai.old.
+  Failed worker reconciled: generated new binary existed, install had not occurred;
+  resumed only unfinished install/probes, no blind rebuild or parallel writer.
   Rebuilt a3bab16d dev binary SHA576e0970b0480e425aeb2ca84c4ad7251532ffcad10a7303e7c369f5986b1171;
   old/backup SHA c00872bc3bed7228c2d5ecc1c7ccb9578b341c1c5ce143a0c3f87a779bdfb798.
   Selected .gentle-ai/v4.0.0/gentle-ai via existing dev registration; registration
   and pinned integrity metadata unchanged. Revision exact, vcs.modified=true,
   tracking was dirty; no clean-build claim. Backup under .gentle-ai/dogfooding/a3bab16d.
-- [ ] L4: IN PROGRESS. Live-discovered filesystem JSON resources outside Facts
+- [x] L4: COMPLETE in13f49df68e8752a8362ffd6e9c431f2f23a8e216.
+  Live-discovered filesystem JSON resources outside Facts
   source inventory must be verified against exact frozen trees, not blindly
   skipped. Batch/bound lookup; accept only verified JSON resource vertices.
   Missing/invalid/unresolved/unsupported targets remain misses. Test import of
@@ -82,4 +88,30 @@ no meaningful TDD RED; source behavior correction does. Commands: focused
 TestFactsRiskSignals; go test ./internal/reviewtransaction ./internal/cli -count=1;
 go vet those packages; go build ./...; scoped gofmt; diff-check. Closure full suite
 pending. L4 forecast ~180-300 authored diff lines including docs, one work unit.
-Next: L4 JSON-resource fix, then L3 rebuild/live; L2 remains blocked independently.
+L4 RED: real-production/test-production/test-test resource signals nil; missing
+blob test initially admitted incomplete evidence. GREEN after bounded frozen
+ls-tree/cat-file batch validation. Worker full packages PASS102.248s/232.960s;
+vet/build/gofmt/diff-check pass. Independent focused PASS3.396s, vet/diff-check0,
+no blocking semantic finding. Complete corrective unit372 diff lines with docs.
+Native assess medium/unavailable, writer self-verification stands; inspect ready,
+no START attempted for L4 while quota unavailable; no approval claimed.
+Final live proof after13f49df6 install: resolver selects new exact path/hash;
+actual CLI and primary gentle_review assess positive worktree return medium,
+executable_change tests/atomic-marker.test.ts,4paths/191lines,no Facts reasons.
+Independent verifier repeated both controls: exit0/same result; historical
+node --experimental-strip-types --test tests/atomic-marker.test.ts PASS5/5,
+zero skips/failures. Focused Go suite post-build PASS3.122s. No restart required
+for selected CLI subprocess; primary tool verified active runtime invocation.
+
+Remaining real completeness blocker in both immutable snapshots:
+tests/shell-sidebar-fullscreen.test.ts:4 imports
+../node_modules/@earendil-works/pi-coding-agent/dist/modes/interactive/chat-viewport.js,
+evidence unresolved,reason module-not-found. Importer unchanged in Git, target
+absent from both trees. Do not relabel this as safe nonlocal to force low tier.
+This demonstrates functioning conservative fallback, NOT positive Facts enrichment.
+Verifier initial wrong --root flag failed before valid --cwd rerun, no mutation.
+
+Next: scoped read-only investigation of this dependency boundary and honest miss
+diagnostics; positive S2 acceptance/S1 live digest/full suite remain pending.
+L2 reviewer quota remains blocked; no approval/receipt/publishing claim.
+All backups and both registered worktrees retained; main cache untouched.
