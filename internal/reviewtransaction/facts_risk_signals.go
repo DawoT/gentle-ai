@@ -135,16 +135,23 @@ func ReadFactsRiskSignals(repoRoot, baseTree, candidateTree string, changedPaths
 		return nil, nil
 	}
 	var base factsRiskDB
-	for id := current.generation.Parent; id != ""; {
+	// Search ALL cached generations for the base tree, not just the parent
+	// chain. The parent chain only includes commits that were HEAD when
+	// facts_commit ran; the review base might be any committed ancestor.
+	genFiles, _ := filepath.Glob(filepath.Join(cache, "facts-data", "generations", "*.json"))
+	for _, genFile := range genFiles {
+		id := strings.TrimSuffix(filepath.Base(genFile), ".json")
+		if id == pointer.Generation {
+			continue // current generation already checked
+		}
 		db, ok := factsRiskLoad(cache, id, &budget)
 		if !ok {
-			return nil, nil
+			continue
 		}
 		if factsRiskTree(repoRoot, db) == baseTree {
 			base = db
 			break
 		}
-		id = db.generation.Parent
 	}
 	if base.files == nil {
 		return nil, nil
@@ -180,7 +187,7 @@ func ReadFactsRiskSignals(repoRoot, baseTree, candidateTree string, changedPaths
 		before, bok := base.files[p]
 		after, aok := current.files[p]
 		if !bok && !aok {
-			return nil, nil
+			continue
 		}
 		if isTestRiskPath(p) {
 			continue
@@ -197,13 +204,13 @@ func ReadFactsRiskSignals(repoRoot, baseTree, candidateTree string, changedPaths
 	dependents := map[string]bool{}
 	for _, db := range []factsRiskDB{base, current} {
 		if db.generation.Metadata.ModuleEdges == nil {
-			return nil, nil
+			continue
 		}
 		for _, e := range db.generation.Metadata.ModuleEdges {
 			_, importerOK := db.files[e.Importer]
 			_, targetOK := db.files[e.Target]
 			if !importerOK || !targetOK || e.Evidence == "unresolved" || e.Evidence == "" {
-				return nil, nil
+				continue
 			}
 			if (changed[e.Importer] || changed[e.Target]) && (!isTestRiskPath(e.Importer) || !isTestRiskPath(e.Target)) {
 				result.TestsOnly = false
