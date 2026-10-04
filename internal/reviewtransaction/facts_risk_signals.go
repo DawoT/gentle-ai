@@ -1,14 +1,17 @@
 package reviewtransaction
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"io"
 	"os"
+	"path"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 )
 
@@ -130,6 +133,74 @@ func factsRiskNonlocalSpecifier(specifier string) bool {
 	return factsRiskBuiltinSpecifier.MatchString(specifier) || factsRiskPackageSpecifier.MatchString(specifier)
 }
 
+// Nonindexed resources are vertices, not synthetic Facts sources. Only exact
+// relative filesystem JSON resolutions can be verified against the frozen tree.
+func factsRiskResources(root, tree string, db factsRiskDB, changed map[string]bool) (map[string]bool, bool) {
+	resources := map[string]bool{}
+	for _, e := range db.generation.Metadata.ModuleEdges {
+		if _, indexed := db.files[e.Target]; indexed || e.Target == "" {
+			continue
+		}
+		normalized, err := normalizeLogicalPath(e.Target)
+		if err != nil || normalized != e.Target || path.Ext(e.Target) != ".json" || changed[e.Target] || e.Evidence != "filesystem" ||
+			(!strings.HasPrefix(e.Specifier, "./") && !strings.HasPrefix(e.Specifier, "../")) || strings.ContainsAny(e.Specifier, "\\\x00:") ||
+			path.Join(path.Dir(e.Importer), e.Specifier) != e.Target {
+			return nil, false
+		}
+		if _, ok := db.files[e.Importer]; !ok {
+			return nil, false
+		}
+		resources[e.Target] = false
+		if len(resources) > 65536 {
+			return nil, false
+		}
+	}
+	paths := make([]string, 0, len(resources))
+	for p := range resources {
+		paths = append(paths, p)
+	}
+	sort.Strings(paths)
+	if len(paths) == 0 {
+		return resources, true
+	}
+	oids := make([]string, 0, len(paths))
+	fixed := []string{"ls-tree", "-r", "-z", tree, "--"}
+	for _, batch := range batchLiteralPathspecs(paths, gitArgvPrefixLength(root, fixed...)) {
+		entries, err := runGit(context.Background(), root, nil, nil, append(append([]string{}, fixed...), batch...)...)
+		if err != nil {
+			return nil, false
+		}
+		for _, entry := range bytes.Split(entries, []byte{0}) {
+			if len(entry) == 0 {
+				continue
+			}
+			tab := bytes.IndexByte(entry, '\t')
+			if tab < 0 {
+				return nil, false
+			}
+			fields := strings.Fields(string(entry[:tab]))
+			p := string(entry[tab+1:])
+			seen, requested := resources[p]
+			if !requested || seen || len(fields) != 3 || (fields[0] != "100644" && fields[0] != "100755") || fields[1] != "blob" || !factsRiskID(fields[2]) {
+				return nil, false
+			}
+			resources[p] = true
+			oids = append(oids, fields[2])
+		}
+	}
+	for _, verified := range resources {
+		if !verified {
+			return nil, false
+		}
+	}
+	// Read in one bounded batch as well: a tree entry alone does not prove
+	// that its blob exists or can be decoded from the object database.
+	if _, err := batchBlobContents(context.Background(), root, oids, 32<<20); err != nil {
+		return nil, false
+	}
+	return resources, true
+}
+
 // ReadFactsRiskSignals reads frozen evidence only; invalid caches are optional misses.
 func ReadFactsRiskSignals(repoRoot, baseTree, candidateTree string, changedPaths []string) (*FactsRiskSignals, error) {
 	if repoRoot == "" || !factsRiskID(baseTree) || !factsRiskID(candidateTree) || len(changedPaths) == 0 {
@@ -206,13 +277,19 @@ func ReadFactsRiskSignals(repoRoot, baseTree, candidateTree string, changedPaths
 		result.SymbolSurfaceDelta += len(old)
 	}
 	dependents := map[string]bool{}
-	for _, db := range []factsRiskDB{base, current} {
-		if db.generation.Metadata.ModuleEdges == nil {
+	for _, side := range []struct {
+		tree string
+		db   factsRiskDB
+	}{{baseTree, base}, {candidateTree, current}} {
+		db := side.db
+		resources, ok := factsRiskResources(repoRoot, side.tree, db, changed)
+		if !ok || db.generation.Metadata.ModuleEdges == nil {
 			return nil, nil
 		}
 		for _, e := range db.generation.Metadata.ModuleEdges {
 			_, importerOK := db.files[e.Importer]
 			_, targetOK := db.files[e.Target]
+			targetOK = targetOK || resources[e.Target]
 			if !importerOK {
 				return nil, nil
 			}

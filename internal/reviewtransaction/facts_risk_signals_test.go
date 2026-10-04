@@ -13,6 +13,153 @@ import (
 	"testing"
 )
 
+// Removing frozen regular-resource verification must break the positive cases;
+// accepting unchecked resources must break the optional-miss cases.
+func TestFactsRiskSignalsJSONResources(t *testing.T) {
+	for _, tc := range []struct {
+		name, importer, target, specifier, evidence, mode string
+		wantSignals, testsOnly                            bool
+	}{
+		{"real-production-edge", "lib/runtime-metrics-native.ts", "contracts/telemetry/runtime-aggregate-v1.schema.json", "../contracts/telemetry/runtime-aggregate-v1.schema.json", "filesystem", "", true, true},
+		{"test-production", "tests/importer.test.ts", "contracts/data.json", "../contracts/data.json", "filesystem", "", true, false},
+		{"test-test", "tests/importer.test.ts", "tests/data.json", "./data.json", "filesystem", "", true, true},
+		{"missing-base", "tests/importer.test.ts", "tests/data.json", "./data.json", "filesystem", "missing-base", false, false},
+		{"missing-candidate", "tests/importer.test.ts", "tests/data.json", "./data.json", "filesystem", "missing-candidate", false, false},
+		{"typescript-resource", "tests/importer.test.ts", "tests/data.json", "./data.json", "typescript", "", false, false},
+		{"unknown-evidence", "tests/importer.test.ts", "tests/data.json", "./data.json", "unknown", "", false, false},
+		{"mismatch", "tests/importer.test.ts", "tests/data.json", "./other.json", "filesystem", "", false, false},
+		{"absolute", "tests/importer.test.ts", "tests/data.json", "/tests/data.json", "filesystem", "", false, false},
+		{"unsafe-target", "tests/importer.test.ts", "tests/../tests/data.json", "./data.json", "filesystem", "", false, false},
+		{"backslash", "tests/importer.test.ts", "tests/data.json", ".\\data.json", "filesystem", "", false, false},
+		{"unsupported-extension", "tests/importer.test.ts", "tests/data.txt", "./data.txt", "filesystem", "", false, false},
+		{"symlink", "tests/importer.test.ts", "tests/data.json", "./data.json", "filesystem", "symlink", false, false},
+		{"directory", "tests/importer.test.ts", "tests/data.json", "./data.json", "filesystem", "directory", false, false},
+		{"submodule", "tests/importer.test.ts", "tests/data.json", "./data.json", "filesystem", "submodule", false, false},
+		{"missing-blob", "tests/importer.test.ts", "tests/data.json", "./data.json", "filesystem", "missing-blob", false, false},
+		{"changed-resource", "tests/importer.test.ts", "tests/data.json", "./data.json", "filesystem", "changed", false, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			root := t.TempDir()
+			git := func(input string, args ...string) string {
+				t.Helper()
+				cmd := exec.Command("git", append([]string{"--no-replace-objects", "-C", root}, args...)...)
+				cmd.Stdin = strings.NewReader(input)
+				cmd.Env = append(os.Environ(), "GIT_AUTHOR_NAME=Test", "GIT_AUTHOR_EMAIL=test@example.invalid", "GIT_COMMITTER_NAME=Test", "GIT_COMMITTER_EMAIL=test@example.invalid")
+				b, err := cmd.CombinedOutput()
+				if err != nil {
+					t.Fatalf("git %v: %v %s", args, err, b)
+				}
+				return strings.TrimSpace(string(b))
+			}
+			git("", "init")
+			cache := filepath.Join(root, ".pi", "facts-commit-cache")
+			artifact := func(kind string, value any) string {
+				t.Helper()
+				b, err := json.Marshal(value)
+				if err != nil {
+					t.Fatal(err)
+				}
+				h := sha256.Sum256(b)
+				id := hex.EncodeToString(h[:])
+				dir := filepath.Join(cache, "facts-data", kind)
+				if err := os.MkdirAll(dir, 0700); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(filepath.Join(dir, id+".json"), b, 0600); err != nil {
+					t.Fatal(err)
+				}
+				return id
+			}
+			changed := "tests/change.test.ts"
+			if strings.HasPrefix(tc.importer, "tests/") {
+				changed = tc.importer
+			}
+			var parent, baseTree, candidateTree string
+			for depth := 0; depth < 2; depth++ {
+				refs := map[string]string{}
+				entries := ""
+				paths := []string{tc.importer}
+				if changed != tc.importer {
+					paths = append(paths, changed)
+				}
+				for _, p := range paths {
+					content := "export const value = 1;\n"
+					if p == changed && depth == 1 {
+						content += "// changed\n"
+					}
+					blob := git(content, "hash-object", "-w", "--stdin")
+					entries += fmt.Sprintf("100644 blob %s\t%s\n", blob, p)
+					refs[p] = artifact("objects", map[string]any{"path": p, "sha": blob, "symbols": []any{}})
+				}
+				resource := git("{\"type\":\"object\"}\n", "hash-object", "-w", "--stdin")
+				mode, kind := "100644", "blob"
+				switch tc.mode {
+				case "missing-blob":
+					resource = strings.Repeat("a", 40)
+				case "symlink":
+					mode = "120000"
+				case "directory":
+					mode, kind, resource = "040000", "tree", git("", "mktree")
+				case "submodule":
+					mode, kind, resource = "160000", "commit", git("submodule\n", "commit-tree", git("", "mktree"))
+				case "changed":
+					if depth == 1 {
+						resource = git("{}\n", "hash-object", "-w", "--stdin")
+					}
+				}
+				if !(tc.mode == "missing-base" && depth == 0 || tc.mode == "missing-candidate" && depth == 1) {
+					// Build nested trees without ever creating resource files in the worktree.
+					parts := strings.Split(filepath.ToSlash(filepath.Clean(tc.target)), "/")
+					entry := fmt.Sprintf("%s %s %s\t%s\n", mode, kind, resource, parts[len(parts)-1])
+					for i := len(parts) - 2; i >= 0; i-- {
+						entry = fmt.Sprintf("040000 tree %s\t%s\n", git(entry, "mktree", "--missing"), parts[i])
+					}
+					// Combine resource and indexed sources using a temporary index owned by this fixture.
+					git("", "read-tree", git(entry, "mktree", "--missing"))
+				} else {
+					git("", "read-tree", git("", "mktree"))
+				}
+				git(entries, "update-index", "--index-info")
+				tree := git("", "write-tree", "--missing-ok")
+				commit := git("fixture\n", "commit-tree", tree)
+				baseTree, candidateTree = candidateTree, tree
+				parent = artifact("generations", map[string]any{"format": "facts-generation-v1", "depth": depth, "parent": parent, "metadata": map[string]any{"version": "1.3.0", "source": map[string]string{"kind": "commit", "commit": commit, "scope": "."}, "moduleEdges": []map[string]string{{"importer": tc.importer, "target": tc.target, "specifier": tc.specifier, "evidence": tc.evidence}}}, "upserts": refs, "deleted": []string{}})
+			}
+			b, _ := json.Marshal(map[string]string{"format": "facts-pointer-v1", "generation": parent})
+			if err := os.WriteFile(filepath.Join(cache, "facts.json"), b, 0600); err != nil {
+				t.Fatal(err)
+			}
+			paths := []string{changed}
+			if tc.mode == "changed" {
+				paths = append(paths, tc.target)
+			}
+			signals, err := ReadFactsRiskSignals(root, baseTree, candidateTree, paths)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if (signals != nil) != tc.wantSignals {
+				t.Fatalf("signals = %+v; want present %v", signals, tc.wantSignals)
+			}
+			if signals != nil && (!signals.CoverageComplete || signals.TestsOnly != tc.testsOnly) {
+				t.Fatalf("signals = %+v; want testsOnly %v", signals, tc.testsOnly)
+			}
+			if tc.wantSignals {
+				assessment, err := (SnapshotBuilder{Repo: root}).AssessSnapshotRisk(t.Context(), Snapshot{BaseTree: baseTree, CandidateTree: candidateTree, Paths: paths})
+				if err != nil {
+					t.Fatal(err)
+				}
+				want := RiskLow
+				if !tc.testsOnly {
+					want = RiskMedium
+				}
+				if assessment.Level != want {
+					t.Fatalf("tier = %s want %s", assessment.Level, want)
+				}
+			}
+		})
+	}
+}
+
 func TestFactsRiskSignals(t *testing.T) {
 	for _, tc := range []struct {
 		name, path, mode  string
