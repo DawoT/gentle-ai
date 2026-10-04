@@ -66,6 +66,7 @@ reviewtransaction owns evidence, classifier, lifecycle storage.
 - [ ] S4 (U3 dissolved) — Documentation: `review abandon` already covers stale
   reviewing lineages (used live; quarantines with audit proof). Add a docs
   pointer in the facade/README so operators discover it; no new verb.
+  Operator guide: [Retire stale review lineages](../../docs/review-abandon-discoverability.md).
 - [ ] S5 — Closure: `go test ./...`, gofmt, per-sprint commits (Conventional,
   ≤400 lines), PR packaging per CONTRIBUTING.md (approved issue required only
   for upstream PRs; fork-local commits exempt).
