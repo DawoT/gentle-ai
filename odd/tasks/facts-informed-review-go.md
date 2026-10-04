@@ -41,15 +41,19 @@ reviewtransaction owns evidence, classifier, lifecycle storage.
   (reviewLensContextInstructionText :737–756) to state the digest's
   evidentiary status. Include the section bytes in START admission and
   materialization budget probes (review_lens_context_test.go).
-- [ ] S2 (U2) — Declaration-graph risk signals. At `AssessSnapshotRisk`
-  (internal/reviewtransaction/risk.go:264–307): consume the same cached
-  database (fail-open absent) to emit canonical reasons — e.g.
-  `facts_unchanged_dependents` (N unchanged importers into changed files),
-  `facts_docs_only_change`, `facts_symbol_surface_delta` — and make
-  ClassifyRisk (:170–187) use them consistently with the existing
-  path/mode/passive-proof evidence. Conservative when cache absent: current
-  behavior preserved bit-for-bit. Risk reasons must still explain the selected
-  tier exactly (:308–313).
+- [x] S2 (U2) — Declaration-graph risk signals DONE: `fa80c920` (399 lines:
+  facts_risk_signals.go reader + risk.go integration + 10-case test matrix).
+  ReadFactsRiskSignals: checksummed cache reader (facts-pointer-v1 layout, parent
+  chains, immutable blobs, never live worktree), tree-matching, fail-open (nil on
+  any error → bit-for-bit current behavior). Canonical reasons:
+  facts_tests_only_change (medium→low when no process signals),
+  facts_unchanged_dependents (stays/elevates high), facts_symbol_surface_delta
+  (context). RED: facts_tests_only_change explained medium not low. GREEN:
+  10-case matrix + full reviewtransaction suite. gofmt clean; go build passes.
+  Review `review-2c6651e012703454` medium/1-lens approved+acknowledged (consumed
+  `sha256:ecc333456b62ac6e505c75ae623577a08f9c80a68af9deb079b5b4266cfb2641`; 3
+  informational advisories backlog: R3-base-walk-unbounded,
+  R3-facts-tier-divergence WARNING, R3-missing-failure-coverage).
 - [ ] S3 (U4) — Last consumed boundary as default base. PREMISE GATE FIRST:
   reconcile fork source vs installed v4.0.0 binary behavior (Pi observed a
   fixed-ancestor default; fork source review_facade.go:2134,2229 defaults
