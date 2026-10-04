@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 )
 
@@ -29,7 +30,7 @@ type factsRiskGeneration struct {
 	Metadata struct {
 		Version     string
 		Source      struct{ Kind, Commit, Scope string }
-		ModuleEdges []struct{ Importer, Target, Evidence string }
+		ModuleEdges []struct{ Importer, Target, Evidence, Specifier, Reason string }
 	}
 	Upserts map[string]string
 	Deleted []string
@@ -119,6 +120,16 @@ func factsRiskExports(f factsRiskFile) map[string]string {
 	return out
 }
 
+// Accept only an unambiguous subset of builtin/package syntax. In particular,
+// aliases, relative/absolute paths, traversal, URLs and malformed names remain
+// advisory misses: they cannot prove that a local dependency is absent.
+var factsRiskPackageSpecifier = regexp.MustCompile(`^(@[a-z0-9_-]+/)?[a-z0-9_-]+(/[a-zA-Z0-9_-]+)*$`)
+var factsRiskBuiltinSpecifier = regexp.MustCompile(`^node:[a-z][a-z0-9_]*(/[a-z][a-z0-9_]*)*$`)
+
+func factsRiskNonlocalSpecifier(specifier string) bool {
+	return factsRiskBuiltinSpecifier.MatchString(specifier) || factsRiskPackageSpecifier.MatchString(specifier)
+}
+
 // ReadFactsRiskSignals reads frozen evidence only; invalid caches are optional misses.
 func ReadFactsRiskSignals(repoRoot, baseTree, candidateTree string, changedPaths []string) (*FactsRiskSignals, error) {
 	if repoRoot == "" || !factsRiskID(baseTree) || !factsRiskID(candidateTree) || len(changedPaths) == 0 {
@@ -135,23 +146,16 @@ func ReadFactsRiskSignals(repoRoot, baseTree, candidateTree string, changedPaths
 		return nil, nil
 	}
 	var base factsRiskDB
-	// Search ALL cached generations for the base tree, not just the parent
-	// chain. The parent chain only includes commits that were HEAD when
-	// facts_commit ran; the review base might be any committed ancestor.
-	genFiles, _ := filepath.Glob(filepath.Join(cache, "facts-data", "generations", "*.json"))
-	for _, genFile := range genFiles {
-		id := strings.TrimSuffix(filepath.Base(genFile), ".json")
-		if id == pointer.Generation {
-			continue // current generation already checked
-		}
+	for id := current.generation.Parent; id != ""; {
 		db, ok := factsRiskLoad(cache, id, &budget)
 		if !ok {
-			continue
+			return nil, nil
 		}
 		if factsRiskTree(repoRoot, db) == baseTree {
 			base = db
 			break
 		}
+		id = db.generation.Parent
 	}
 	if base.files == nil {
 		return nil, nil
@@ -187,7 +191,7 @@ func ReadFactsRiskSignals(repoRoot, baseTree, candidateTree string, changedPaths
 		before, bok := base.files[p]
 		after, aok := current.files[p]
 		if !bok && !aok {
-			continue
+			return nil, nil
 		}
 		if isTestRiskPath(p) {
 			continue
@@ -204,13 +208,19 @@ func ReadFactsRiskSignals(repoRoot, baseTree, candidateTree string, changedPaths
 	dependents := map[string]bool{}
 	for _, db := range []factsRiskDB{base, current} {
 		if db.generation.Metadata.ModuleEdges == nil {
-			continue
+			return nil, nil
 		}
 		for _, e := range db.generation.Metadata.ModuleEdges {
 			_, importerOK := db.files[e.Importer]
 			_, targetOK := db.files[e.Target]
-			if !importerOK || !targetOK || e.Evidence == "unresolved" || e.Evidence == "" {
+			if !importerOK {
+				return nil, nil
+			}
+			if e.Evidence == "unresolved" && e.Target == "" && e.Reason == "module-not-found" && factsRiskNonlocalSpecifier(e.Specifier) {
 				continue
+			}
+			if !targetOK || (e.Evidence != "filesystem" && e.Evidence != "typescript") {
+				return nil, nil
 			}
 			if (changed[e.Importer] || changed[e.Target]) && (!isTestRiskPath(e.Importer) || !isTestRiskPath(e.Target)) {
 				result.TestsOnly = false
