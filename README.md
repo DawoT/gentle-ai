@@ -136,9 +136,9 @@ Small changes should not need a planning pipeline, and larger work should not lo
 
 ---
 
-### Strict TDD — Prove behavior when enabled
+### Test-first by default — Prove each requested rule
 
-ODD uses the configured TDD mode and exact test runner. When Strict TDD is enabled, capture a failing behavior test before implementation, make it pass, then refactor while tests stay green. When disabled, run applicable functional checks anyway. The presence of tests alone does not enable Strict TDD.
+ODD applies test-first development by default when a relevant runnable test and a clear expected outcome exist: capture a failing behavior test before implementation, make it pass, then refactor while tests stay green. Each requested rule gets one RED test, each touched existing command or option gets one test proving its previous behavior still holds, and nothing else is padded in. Without a meaningful runnable test, the agent explains the exception and runs applicable functional checks anyway.
 
 **[Docs →](docs/usage.md#organic-driven-development-odd)**
 
@@ -222,9 +222,11 @@ gentle-ai          # pick your agents, components and persona
 gentle-ai doctor   # verify — read-only, changes nothing
 ```
 
+If `doctor` cannot read `state.json`, inspect the reported file and parent directory's access; for permission errors, check permissions and ownership. Keep the existing state file. For invalid JSON, restore a valid backup or repair the content while preserving your installation settings. Then re-run `gentle-ai doctor`; it never changes the file or its permissions.
+
 Then use your agent normally. Your configs are snapshotted before every write, and **Gentle-AI never installs an AI agent for you** — it configures what you already have.
 
-> **Beta channel, signature verification and per-distro prerequisites: [Quickstart →](docs/quickstart.md)**
+> **Beta channel and per-distro prerequisites: [Quickstart →](docs/quickstart.md) · Signature verification: [Release signing →](docs/release-signing.md#user-verification)**
 
 <div align="right"><a href="#top">Back to top</a></div>
 

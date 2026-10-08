@@ -291,20 +291,20 @@ func TestFactsRiskSignals(t *testing.T) {
 		positive   bool
 	}{
 		{"dotted", "a_test.go", true},
-		{"stdlib-go", "a_test.go", true}, {"stdlib-python", "tests/a.py", true},
-		{"stdlib-sys", "tests/a.py", true},
-		{"stdlib-unknown", "tests/a.py", false}, {"stdlib-relative", "tests/a.py", false},
+		{"stdlib-go", "a_test.go", true}, {"stdlib-python", "tests/test_a.py", true},
+		{"stdlib-sys", "tests/test_a.py", true},
+		{"stdlib-unknown", "tests/test_a.py", false}, {"stdlib-relative", "tests/test_a.py", false},
 		{"stdlib-unknown-go", "a_test.go", false}, {"stdlib-python-go", "a_test.go", false},
-		{"stdlib-missing-importer", "tests/a.py", false}, {"stdlib-wrong-evidence", "tests/a.py", false},
-		{"stdlib-wrong-language", "tests/a.ts", false}, {"stdlib-go-python", "tests/a.py", false},
-		{"stdlib-wrong-reason", "tests/a.py", false}, {"stdlib-filled", "tests/a.py", false},
-		{"stdlib-shadow-file-base", "tests/a.py", false}, {"stdlib-shadow-file-candidate", "tests/a.py", false},
-		{"stdlib-shadow-package-base", "tests/a.py", false}, {"stdlib-shadow-package-candidate", "tests/a.py", false},
-		{"stdlib-shadow-pyc-base", "tests/a.py", false}, {"stdlib-shadow-pyc-candidate", "tests/a.py", false},
-		{"stdlib-shadow-compiled-base", "tests/a.py", false}, {"stdlib-shadow-compiled-candidate", "tests/a.py", false},
-		{"stdlib-shadow-archive-base", "tests/a.py", false}, {"stdlib-shadow-archive-candidate", "tests/a.py", false},
-		{"stdlib-shadow-symlink-base", "tests/a.py", false}, {"stdlib-shadow-symlink-candidate", "tests/a.py", false},
-		{"stdlib-shadow-gitlink-base", "tests/a.py", false}, {"stdlib-shadow-gitlink-candidate", "tests/a.py", false},
+		{"stdlib-missing-importer", "tests/test_a.py", false}, {"stdlib-wrong-evidence", "tests/test_a.py", false},
+		{"stdlib-wrong-language", "tests/a.ts", false}, {"stdlib-go-python", "tests/test_a.py", false},
+		{"stdlib-wrong-reason", "tests/test_a.py", false}, {"stdlib-filled", "tests/test_a.py", false},
+		{"stdlib-shadow-file-base", "tests/test_a.py", false}, {"stdlib-shadow-file-candidate", "tests/test_a.py", false},
+		{"stdlib-shadow-package-base", "tests/test_a.py", false}, {"stdlib-shadow-package-candidate", "tests/test_a.py", false},
+		{"stdlib-shadow-pyc-base", "tests/test_a.py", false}, {"stdlib-shadow-pyc-candidate", "tests/test_a.py", false},
+		{"stdlib-shadow-compiled-base", "tests/test_a.py", false}, {"stdlib-shadow-compiled-candidate", "tests/test_a.py", false},
+		{"stdlib-shadow-archive-base", "tests/test_a.py", false}, {"stdlib-shadow-archive-candidate", "tests/test_a.py", false},
+		{"stdlib-shadow-symlink-base", "tests/test_a.py", false}, {"stdlib-shadow-symlink-candidate", "tests/test_a.py", false},
+		{"stdlib-shadow-gitlink-base", "tests/test_a.py", false}, {"stdlib-shadow-gitlink-candidate", "tests/test_a.py", false},
 	} {
 		want, reason := RiskMedium, ""
 		if tc.positive {
@@ -333,7 +333,7 @@ func TestFactsRiskSignals(t *testing.T) {
 		}
 		p := "tests/change.test.ts"
 		if strings.HasSuffix(tc.mode, "-resource") {
-			p = "tests/data.json"
+			p = "__tests__/data.json"
 		}
 		cases = append(cases, struct {
 			name, path, mode  string
