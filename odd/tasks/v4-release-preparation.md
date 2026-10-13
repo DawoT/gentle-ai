@@ -44,3 +44,28 @@ Fetched merged main over authorized HTTPS and switched this isolated worktree to
 W2 implementation (delegated writer mulol9l8-12-pbch, route: delegated direct, 600+ files): observed RED for installer module-major tests and `go list -m`, then GREEN. Independent verifier mulpdmdo-13-jkra: PASS_WITH_ENVIRONMENTAL_EXCEPTION. Focused update/releasepolicy/providercontractbundle tests, install-module-path 5/5, gofmtcheck, vet and diff check passed; full `go test ./...` failed only two internal/app tests. Those tests fail identically on base 61692e5 offline because internal/app TestMain replaces HOME and the child `go build` loses the module cache under GOPROXY=off; both pass on base and candidate when GOMODCACHE is set. Parent corrections: executor.go boundary comment, two synthetic guard fixtures, restored the no-`v`-prefix source-install case (as 4.0.0), TRADEMARKS.md module example.
 
 Native review of the whole candidate stopped with lens_context_budget_exceeded (no authority created). Human selected a two-commit PR: commit a9f1390da (go.mod + 628 files, import-only /v3->/v4, builds and vets offline; installer-major tests stay red until commit 2), then the ~21-file semantic commit with native review. The PR merges as one unit. Scope change: the user asked not to publish releases or tags. W4 and W6 are deferred; W5 depends on published assets and is deferred too. Target state: migration merged, main CI and Windows green, release notes prepared as an unpublished draft.
+
+## Fork sync ledger (DawoT/gentle-ai)
+
+2026-10-13 sync: merged upstream/main f0b6e477 (the v4.1.0 + v4.1.1 line, 233
+commits, additive Gentle Shell install/CI work plus review fixes) into the
+fork main carrying the facts-informed-review-go work. Backup branch
+backup-main-pre-v4.1.1-sync pins the pre-merge fork main ac163326. Merge
+d582777c resolved exactly one conflict, internal/cli/review_lens_context.go,
+by combining both Scope sentences (dependency lockfiles carry full immutable
+patches per upstream #5408; the optional Facts subject digest stays advisory
+context per the local feature) and adopting the upstream
+reviewLensContextOmitsContent helper beside the local variadic roots and
+patchStart digest logic. Verification: go build, go vet, gofmtcheck and
+go mod tidy -diff clean; full go test ./... under the module's go1.25.10
+toolchain green except the two new upstream shellinstaller Node proofs
+(TestUserFrozenLockAcquisition, TestUserManagerCapabilityHelperUsesExecutableCustody),
+which fail identically on pure upstream f0b6e477 in this environment
+(node v26.10.0/npm 12.6.0 materialization and /tmp 0775 supervisor custody),
+so they are upstream environment-sensitive tests, not merge regressions.
+Post-sync behavioral proof of the preserved local work: opt-in Facts live
+tests green on the immutable fixture pair, deployed-binary-pattern assess on
+the positive worktree returns the same medium/facts_symbol_surface_delta
+exit0 with the missing-cache control unchanged, and both Facts cache pointers
+untouched. The two upstream environmental failures and the isTestRiskPath
+narrowing from #5345 are recorded in odd/tasks/facts-informed-review-go.md.

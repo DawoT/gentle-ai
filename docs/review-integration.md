@@ -125,7 +125,7 @@ Without the flags, START and the persisted authority are unchanged. Authority th
 The agent names the 4R lenses pertinent to what it touched and how, instead of taking the tier default (one `review-reliability` lens for `medium`, all four for `high`). `--lenses` takes a comma-separated list of `risk`, `resilience`, `readability`, and `reliability` (or their `review-` names). `--lenses-reason` is a non-empty one-line reason of at most 500 bytes. Both flags or neither, each at most once, never together with `--focus`.
 
 - START runs exactly the named lenses, in canonical 4R order, on a `medium` or `high` candidate. A `high` candidate may run fewer than four. A candidate that selects no lenses (structural readback) refuses a selection.
-- START freezes the reason with the authority (`lens_selection_reason` in the state and in its START binding) and binds it into the capture phase revision. Replaying START on the same lineage with a different selection is an `atomic_start_conflict`.
+- START freezes the reason with the authority (`lens_selection_reason` in the state and in its START binding) and binds it into the capture phase revision. Replaying START on an active lineage keeps its frozen selection: a resume that names a different selection or reason replays the existing authority and returns the frozen `selected_lenses`. Any other immutable difference is still an `atomic_start_conflict`.
 - Recovery successors inherit the selection and its reason. A relayed consent answer repeats both flags.
 
 Without the flags, START keeps the tier default and the persisted authority is unchanged. Authority that carries a selection is not readable by older binaries; see the request-context compatibility note above.
@@ -172,6 +172,12 @@ recorded successor fails closed with a read-only `review inspect-authority`
 diagnostic. Run that diagnostic with the requested repository as process cwd;
 do not invent a new successor to bypass the conflict.
 
+When strict compact-state decoding and historical compatibility both fail,
+`CompactStore.Load` reports the lineage and both failure causes, retaining the
+strict error as its wrapped cause. The record remains rejected and unchanged;
+`review inspect-authority` keeps its existing problem codes, not these details.
+This diagnostic does not grant compatibility, recovery, or mutation authority.
+
 Explicit compatibility remains available through the complete successor,
 `--recovery-actor`, `--recovery-reason`, and `--recovery-authorization` binding.
 STATUS renders the existing seven-argument RECOVER form only for an exact binding.
@@ -203,6 +209,8 @@ The in-process Claude Code reviewer uses the saved model and effort for each rol
 Each provider-issued capture input is one slot. Its reviewer prompt starts with `GENTLE_AI_REVIEW_BINDING ` followed by one-line binding JSON. A result echoes the exact `subject_hash`, reports completed inspection of the full manifest, and supplies structured findings/evidence. On malformed, incomplete, or unavailable inspection, query bound STATUS again; relaunch only when it reoffers the exact same slot.
 
 Reviewers inspect only provider-bound immutable trees. They never inspect the live worktree, index, `HEAD`, or another revision, and candidate bytes must not move through `/tmp`, a repository scratch file, or `GENTLE_AI_FROZEN_CANDIDATE_CONTEXT`. The one exception is the Codex refuter probe below: Go itself writes the frozen candidate tree into a fresh scratch copy it creates and removes.
+
+Dependency locks (`package-lock.json`, `npm-shrinkwrap.json`, `pnpm-lock.yaml`, `yarn.lock`, `go.sum`, and `Cargo.lock`, including nested paths) retain their generated classification in the changed-path manifest and carry complete frozen patches as semantic evidence. Existing changed-line accounting is unchanged: text lockfile additions and deletions are still counted. Lenses, refuters, and targeted validators use the same evidence policy; other generated outputs retain metadata-only summaries. The existing 4 MiB native ceiling and any smaller runtime-context budget still apply: oversized evidence is refused, never truncated, and tool-free reviewers receive no additional tools.
 
 ### Non-lens provider roles: refuter and targeted validator
 
@@ -308,7 +316,7 @@ A `stop` carries one reason code and no executable transition. The table below i
 | --- | --- |
 | `captured_artifacts_unverifiable` | Terminal — a captured reviewer artifact failed local verification. Ask a maintainer to inspect the B authority, or run `gentle-ai review mode disable --scope clone --cwd <repo>`. |
 | `captured_result_selection_unavailable` | Terminal — an internal result-selection invariant failed. Ask a maintainer to inspect the lineage, or run `gentle-ai review mode disable --scope clone --cwd <repo>`. |
-| `corrected_candidate_unavailable` | Change the correction candidate in B, then re-query `gentle-ai review status --cwd <repo> --contract gentle-ai.review-integration/v2 --agent {{GENTLE_AI_RUNTIME_AGENT_ID}} --next-transition` with the captured lineage and target. Do not reuse the pre-correction target. |
+| `corrected_candidate_unavailable` | Change the correction candidate in B, then re-query `gentle-ai review status --cwd <repo> --contract gentle-ai.review-integration/v2 --agent {{GENTLE_AI_RUNTIME_AGENT_ID}} --next-transition` with the captured lineage and target. For a committed-only review, commit the bounded correction (or amend its commit); uncommitted tracked changes do not change that candidate, and unrelated tracked worktree edits are ignored. The accepted correction forecast is one-shot: do not capture it again. Do not reuse the pre-correction target. |
 | `empty_base_diff_bootstrap_required` | Terminal — the committed base has no reviewable paths. Use the separately authorized empty-root bootstrap for a new target, or run `gentle-ai review mode disable --scope clone --cwd <repo>`. |
 | `lens_context_budget_exceeded` | Terminal — immutable reviewer context cannot be truncated. Reduce the B candidate scope and start a new transaction, or run `gentle-ai review mode disable --scope clone --cwd <repo>`. |
 | `correction_context_budget_exceeded` | Release this review authority: the corrected candidate's evidence plus its recorded findings cannot fit the runtime context budget, so no targeted validation can ever be assembled and `gentle-ai review invalidate` refuses once lens results are admitted. Run `gentle-ai review abandon --cwd <repo> --lineage <id> --expected-revision <revision> --reason operator_disposition --actor <actor> --maintainer-authorization <binding>` (run `gentle-ai review abandon` with no flags to print the binding template). The STATUS stop carries that release as `next_transition.continuation` with `operation: "abandon"` whenever the authority is eligible, and omits it entirely when it is not, rather than naming a command the live operation would refuse. Then review the change as smaller candidates, or run `gentle-ai review mode disable --scope clone --cwd <repo>`. |

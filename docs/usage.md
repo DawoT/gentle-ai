@@ -348,11 +348,14 @@ Checks performed:
 |-------|-----------------|
 | Tool binaries | Required tools present on `PATH` and successfully run a non-interactive version probe within five seconds (`--version`, or `version` for Engram); probe failures warn instead of reporting a healthy tool. Probe process trees are terminated before the check returns, including on timeout or cancellation. Shadow detection (wrong binary resolves first). The managed OpenCode launcher and the executable it delegates to count as one installation when the launcher comes first on `PATH`; when the target comes first, doctor warns that it bypasses the launcher |
 | `state.json` validity | Parses `~/.gentle-ai/state.json`, reports schema/corruption issues, and checks installed agents' managed config directories using the same adapters as install/sync. Missing directories suggest sync; unrecognized agent IDs warn and require state inspection. Detection-only agents such as Conductor do not require their own config directory. |
+| Installed asset version | Compares the recorded installation version with the running binary; on a mismatch, recommends `sync` using that binary's absolute path and flags a different copy resolved through `PATH` |
 | OpenCode activation (`opencode:managed_profile`) | With OpenCode background subagents on (POSIX): a new login shell resolves `opencode` to the managed launcher, not to a copy that a later startup file puts first on `PATH`; warns when this cannot be verified |
 | Engram MCP reachability | Confirms the Engram MCP server responds |
 | Disk space | Warns when available space is critically low |
 
 Each check reports **pass**, **warn**, or **fail** with an optional remedy hint. Run `doctor` first when troubleshooting an unexpected install or sync result.
+
+For an asset-version warning, use the exact executable path printed by `doctor`, not a bare `gentle-ai sync` that could select another installation. Paths requiring quoting use POSIX single quotes or Windows cmd.exe double quotes; in PowerShell, prefix a quoted executable with `&`. If the invoked absolute path cannot be determined, `doctor` asks you to supply that path rather than suggesting a potentially different build. Sync refreshes assets for the selected build; it does not make different builds' asset versions agree.
 
 ### version
 
@@ -391,6 +394,18 @@ gentle-ai -v
 | `--pi-background-subagents`   | Pi background-subagent policy projected for `gentle-pi`: `auto`, `on`, or `off`. Also settable via `GENTLE_AI_PI_BACKGROUND_SUBAGENTS`. |
 | `--claude-orchestrator-modules` | Global Claude Code only: install the orchestrator as an always-loaded core plus on-demand modules in `~/.claude/gentle-ai/orchestrator/`. Off by default; rejected with `--scope workspace` or without `claude-code` in the selection. Sync, uninstall and restore limits: [Claude Code orchestrator modules](rollback.md#claude-code-orchestrator-modules-pilot). |
 | `--dry-run`                   | Preview the install plan without applying changes                                                                 |
+
+### Isolated installs
+
+A caller that keeps everything in its own folder, such as a bundled Gentle Shell running `gentle-ai install --agent pi --scope global`, sets these variables. Each one must be an absolute path; an invalid value stops the command before detection or any write, with an error that names the variable. When none is set, nothing changes.
+
+| Variable | What moves | Path rule |
+| --- | --- | --- |
+| `GENTLE_AI_HOME` | Gentle AI's own state | Replaces `~/.gentle-ai`: `state.json` (and its lock), `managed-assets.manifest.json`, `managed-assets.journal`, `telemetry.json` (and its lock), `backups/`, and `pi-codegraph.json` or `pi-codegraph-<hash>.json`. Install, sync, restore and backup deletion all use it. |
+| `GENTLE_AI_PI_CONFIG_DIR` | gentle-pi's global config folder | The folder itself, the same one gentle-pi reads as `GENTLE_PI_CONFIG_HOME` (default `~/.pi/gentle-ai`). A global install or sync writes `<dir>/persona.json` and `<dir>/background-subagents.json`. It wins over `GENTLE_PI_CONFIG_HOME`, which keeps its current meaning here (`<GENTLE_PI_CONFIG_HOME>/gentle-ai/background-subagents.json`). Workspace installs still write `<workspace>/.pi/gentle-ai/persona.json`. |
+| `GENTLE_AI_ENGRAM_BIN` | The Engram binary | An existing executable file. Install runs `<file> version` before writing anything, then uses that file for `engram setup` and agent configuration: no `brew`, no download, no `go install`, no PATH or registry change. While it is set, dependency detection runs no `git`, `curl`, `node`, `npm`, `brew` or `go` command and no `npm config get prefix`, because those probes only feed warnings and Engram acquisition. |
+
+Engram's memory data (`~/.engram`) is not moved. Combine these with `GENTLE_AI_NO_SELF_UPDATE=1` so the caller's pinned binary is not replaced.
 
 ## CLI Flags (sync)
 

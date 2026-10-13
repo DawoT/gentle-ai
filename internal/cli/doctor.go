@@ -126,6 +126,12 @@ func RunDoctor(ctx context.Context, w io.Writer) error {
 			return checkOpenCodeProfile(homeDir, pathDirs)
 		}})
 	}
+	for _, agent := range installedAgents {
+		if agent == string(model.AgentPi) {
+			checks = append(checks, doctor.Check{ID: "pi:mcp", Run: func(context.Context) doctor.Result { return checkPiMCP(homeDir) }})
+			break
+		}
+	}
 	report := (doctor.Runner{Checks: checks}).Run(ctx)
 
 	renderDoctorReport(w, report)
@@ -895,6 +901,21 @@ func statusIcon(s CheckStatus) string {
 	}
 }
 
+// doctorAssetSyncRemediation keeps the remedy anchored to the build that
+// diagnosed the skew. A bare PATH fallback could sync a different build's
+// assets and leave this warning unchanged (#4782).
+func doctorAssetSyncRemediation() string {
+	invoked, err := osExecutableDoctor()
+	if err != nil || !managedAssetsArgvZeroIdentity(invoked) {
+		return "cannot determine the absolute invoked executable path; run sync using the absolute path of this running build to update installed assets"
+	}
+	remedy := fmt.Sprintf("run `%s sync` to update installed assets", managedAssetsExecutableToken(invoked))
+	if resolved, _, err := resolveDoctorTool("gentle-ai"); err == nil && !doctorSameExecutable(invoked, resolved) {
+		remedy += fmt.Sprintf("; gentle-ai on PATH resolves to %s, which differs from the running executable; use the invoked path above", resolved)
+	}
+	return remedy
+}
+
 func checkInstalledAssetVersion(homeDir string) CheckResult {
 	s, err := state.Read(homeDir)
 	if err != nil {
@@ -912,7 +933,7 @@ func checkInstalledAssetVersion(homeDir string) CheckResult {
 	if s.InstalledBinaryVersion != AppVersion {
 		return CheckResult{
 			Status: CheckStatusWarn,
-			Detail: fmt.Sprintf("installed assets were configured by gentle-ai %s, but running binary is %s — run 'gentle-ai sync' to update installed assets", s.InstalledBinaryVersion, AppVersion),
+			Detail: fmt.Sprintf("installed assets were configured by gentle-ai %s, but running binary is %s — %s", s.InstalledBinaryVersion, AppVersion, doctorAssetSyncRemediation()),
 		}
 	}
 	return CheckResult{

@@ -117,7 +117,8 @@ var reviewStopReasonNarration = map[string]string{
 	"captured_result_selection_unavailable": "This run reached a state that should never happen: every review result it expected was already present. " +
 		"This is a product defect, not something to retry. If you just want your work delivered, run `" + reviewModeDisableCloneCommand + "` " +
 		reviewModeDisableCloneCaveat + " so ordinary repository policy (hooks, tests, CI) decides instead; nothing is silently approved. To get this review itself fixed, report the defect with this run's details.",
-	"corrected_candidate_unavailable": "Change the candidate content so it differs from the frozen original, then re-run " +
+	"corrected_candidate_unavailable": "For a committed-only review, commit the bounded correction (or amend its commit); unrelated tracked worktree edits are ignored. " +
+		"The accepted correction forecast cannot be captured again. Change the candidate content so it differs from the frozen original, then re-run " +
 		"`gentle-ai review status --cwd <repo> --contract gentle-ai.review-integration/v2 --agent " + reviewUndeclaredRuntimeIdentitySlot + " --next-transition`. " +
 		"That is the right path when the review found real defects. If instead the reviewers were given the wrong input " +
 		"and their findings describe content that was never the candidate, a maintainer can quarantine those results and " +
