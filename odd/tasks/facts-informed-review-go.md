@@ -32,11 +32,24 @@ PR, merge, model switch, RDD-disable or implicit approval. Preserve unrelated ed
   focused matrix and reviewtransaction/cli suites, vet/build/gofmt/diff-check pass.
   CLI initial120s timeout had no verdict, foreground rerun passed. Mechanical
   isolation not certified. 333 authored commit lines, 316 native frozen lines.
-- [ ] L2: BLOCKED review-786a02b33e841875 reviewing/collect, medium/reliability.
-  HTTP429 code1310 reviewer quota reset 2026-10-08 23:38:21 (timezone unspecified).
-  Zero prepared/submitted verdicts, no approval/ack. Fresh STATUS reconciled.
-  Invalid bindingRef/correctionLines attempts were parent orchestration errors,
-  no authority mutation. Resume exact fresh STATUS; do not replay old binding.
+- [x] L2: COMPLETE review-786a02b33e841875, medium/reliability. After the
+  HTTP429 code1310 quota reset (2026-10-08 23:38:21) the collect completed on
+  its own: lens review-reliability admitted decision completed, one WARNING
+  finding R3-bare-alias-misclassified-external, zero candidate-causal
+  blocker/critical ids, authority recorded approved with pending ack token
+  (revision sha256:fd0fadd9e1e6f00e31869c22fd42b919fc125e2b42bd95c20fd0092a383f30ce).
+  Bound STATUS reoffer required the exact frozen worktree: selectorless and
+  moved-worktree STATUS returned applicability unrelated (fail closed); the
+  frozen candidate tree df8d834b is commit a3bab16d over base tree 34a46b4f
+  (7c6bae23), reproduced via detached checkout, after which bound STATUS
+  reoffered review.acknowledge-approved with the exact binding
+  (target sha256:13a9460a05550d011b4ec8521407d6fd5f9a73e5b6ed7e6462cb37d98e1194ca,
+  token 3a439c8e5df486a989697f4bf1c872b6dcd2c7b26ef868a1571de07abe61dc92).
+  Exact returned command run once: gentle-ai.review-acknowledged/v1,
+  action acknowledged, consumed_revision fd0fadd9, authority burned;
+  terminal-consumption record 06e39ee4dbe553bc7601b3d9e8d054aa692732099887ac149256532a7bb99c74
+  appended; v2 store retains LOCK only. No binding reconstruction, no replay,
+  no delivery authorization claimed; branch restored after the burn.
 - [x] L3: positive Facts acceptance COMPLETE with clean MAIN c14c3c15 DEV,
   SHAf9aa6d66c1bc4db84b16f1ddb0afb145f8867da234882006601067a99d2fbead.
   Actual CLI/facade passive/facts_tests_only_change versus missing-cache medium;
