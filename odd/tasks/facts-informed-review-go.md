@@ -32,11 +32,24 @@ PR, merge, model switch, RDD-disable or implicit approval. Preserve unrelated ed
   focused matrix and reviewtransaction/cli suites, vet/build/gofmt/diff-check pass.
   CLI initial120s timeout had no verdict, foreground rerun passed. Mechanical
   isolation not certified. 333 authored commit lines, 316 native frozen lines.
-- [ ] L2: BLOCKED review-786a02b33e841875 reviewing/collect, medium/reliability.
-  HTTP429 code1310 reviewer quota reset 2026-10-08 23:38:21 (timezone unspecified).
-  Zero prepared/submitted verdicts, no approval/ack. Fresh STATUS reconciled.
-  Invalid bindingRef/correctionLines attempts were parent orchestration errors,
-  no authority mutation. Resume exact fresh STATUS; do not replay old binding.
+- [x] L2: COMPLETE review-786a02b33e841875, medium/reliability. After the
+  HTTP429 code1310 quota reset (2026-10-08 23:38:21) the collect completed on
+  its own: lens review-reliability admitted decision completed, one WARNING
+  finding R3-bare-alias-misclassified-external, zero candidate-causal
+  blocker/critical ids, authority recorded approved with pending ack token
+  (revision sha256:fd0fadd9e1e6f00e31869c22fd42b919fc125e2b42bd95c20fd0092a383f30ce).
+  Bound STATUS reoffer required the exact frozen worktree: selectorless and
+  moved-worktree STATUS returned applicability unrelated (fail closed); the
+  frozen candidate tree df8d834b is commit a3bab16d over base tree 34a46b4f
+  (7c6bae23), reproduced via detached checkout, after which bound STATUS
+  reoffered review.acknowledge-approved with the exact binding
+  (target sha256:13a9460a05550d011b4ec8521407d6fd5f9a73e5b6ed7e6462cb37d98e1194ca,
+  token 3a439c8e5df486a989697f4bf1c872b6dcd2c7b26ef868a1571de07abe61dc92).
+  Exact returned command run once: gentle-ai.review-acknowledged/v1,
+  action acknowledged, consumed_revision fd0fadd9, authority burned;
+  terminal-consumption record 06e39ee4dbe553bc7601b3d9e8d054aa692732099887ac149256532a7bb99c74
+  appended; v2 store retains LOCK only. No binding reconstruction, no replay,
+  no delivery authorization claimed; branch restored after the burn.
 - [x] L3: positive Facts acceptance COMPLETE with clean MAIN c14c3c15 DEV,
   SHAf9aa6d66c1bc4db84b16f1ddb0afb145f8867da234882006601067a99d2fbead.
   Actual CLI/facade passive/facts_tests_only_change versus missing-cache medium;
@@ -175,3 +188,34 @@ controlled configured-provider+B survives staleA. Existing failure RED->GREEN,
 production behavior and user configuration unchanged. Full go test ./... -count=1,
 go vet ./... and go build ./... passed; default3real-fixture tests opt-in skipped.
 Test-only final commit does not require rebuilding unchanged production executable.
+
+## Installed-runtime acceptance and upstream alignment (2026-10-13)
+
+M2b acceptance rebuilt the deployed dev runtime from closure commit
+70b655eeb77b7c317b12f2051d0ebdcdfd89ced4 (v4.0.1-0.20261013170743-70b655eeb77b,
+vcs.modified=false, SHA fbb9c52886ad96cea59f2b1a71b842fb69245d46072bdd014542eaee042a7509).
+Exact previous executable backed up under parent .gentle-ai/dogfooding/70b655ee
+(gentle-ai.old SHA 50ba217b5138c1a9c7d5bf2f79931b1bb89b89c4cf650dcd7ee037657c88158d);
+registration and pinned integrity metadata unchanged. Replay of the unchanged
+real snapshots over base d11971cf trees 861563e9/1aa6f9c1 (now the committed
+07cefa0b candidate, identical trees): positive worktree assess exit0
+medium/executable_change tests/atomic-marker.test.ts plus
+facts_symbol_surface_delta; missing-cache control exit0
+medium/executable_change with no Facts reason. Both cache pointers unchanged
+(parent bfeaa09d, worktree d200c8dc, generation 997259cd); no reindex.
+
+The positive outcome differs from the recorded c14c3c15
+passive/facts_tests_only_change by merged upstream intent, not by drift:
+upstream #5345 (c13d4b75, adopted by the sync merge) narrowed isTestRiskPath
+to filename patterns plus __tests__/testdata, so the fixture's shared
+tests/support/atomic-marker.mjs is production. Component live replay on the
+same immutable trees/cache returns CoverageComplete=true, TestsOnly=false,
+UnchangedDependents=0, SymbolSurfaceDelta=2; control stays nil. The opt-in
+live test is re-characterized to those observed values (RED on the old
+assertion, GREEN on the new); conservative fallback and fail-open behavior
+are unchanged. Roadmap alignment: this work is the fork-side implementation
+path for upstream issue #1380 (adaptive evidence-driven review execution,
+up-for-grabs, priority:high; no #1380 implementation exists in upstream
+main as of 2026-10-13) and composes with upstream #5408/#5292 lockfile
+evidence — both inject immutable non-patch context beside patches, which
+the Facts digest design treats as primary. No PR upstreamed; fork-local.
