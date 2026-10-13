@@ -57,8 +57,16 @@ func runFactsRiskSignalsLive(t *testing.T, root string, wantMiss bool) {
 		}
 		return
 	}
-	if err != nil || signals == nil || !signals.TestsOnly || !signals.CoverageComplete {
-		t.Fatalf("desired complete facts-only evidence not met: signals=%+v error=%v", signals, err)
+	if err != nil || signals == nil || !signals.CoverageComplete {
+		t.Fatalf("desired complete facts evidence not met: signals=%+v error=%v", signals, err)
+	}
+	// Characterization of the immutable fixture under the merged upstream
+	// semantics: #5345 narrowed isTestRiskPath to filename patterns plus
+	// __tests__/testdata, so the shared tests/support utility is production.
+	// Coverage stays complete, tests-only is withdrawn, and its two surfaced
+	// exports are the whole delta.
+	if signals.TestsOnly || signals.UnchangedDependents != 0 || signals.SymbolSurfaceDelta != 2 {
+		t.Fatalf("characterized fixture classification drifted: signals=%+v", signals)
 	}
 }
 
