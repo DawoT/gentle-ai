@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/gentleman-programming/gentle-ai/v4/internal/backup"
+	"github.com/gentleman-programming/gentle-ai/v4/internal/state"
 )
 
 // RestoreFunc is the function signature for restoring a backup from its manifest.
@@ -50,6 +51,7 @@ func newRestoreFlagSet(list, yes *bool) *flag.FlagSet {
 		fmt.Fprintf(fs.Output(), "Usage of %s:\n", fs.Name())
 		fmt.Fprintln(fs.Output(), "  gentle-ai restore [--list | latest | <id>] [--yes]")
 		fmt.Fprintln(fs.Output(), "  -- ends flag parsing; at most one backup target is accepted")
+		fmt.Fprintln(fs.Output(), "  CODEX_HOME may authorize its existing directory for CLI restore, not its parent")
 		fs.PrintDefaults()
 	}
 	return fs
@@ -245,14 +247,16 @@ func listBackupsFromDir(homeDir string) []backup.Manifest {
 	return manifests
 }
 
-// backupRootDir returns the path to the backup directory under homeDir.
+// backupRootDir returns the path to the backup directory under homeDir, or
+// under GENTLE_AI_HOME when set.
 func backupRootDir(homeDir string) string {
+	if os.Getenv(state.HomeEnv) != "" {
+		return state.BackupsDir(homeDir)
+	}
 	return homeDir + "/.gentle-ai/backups"
 }
 
-// defaultRestorer returns the standard backup.RestoreService.Restore function.
+// defaultRestorer authorizes the current validated Codex root for managed backups.
 func defaultRestorer() RestoreFunc {
-	return func(m backup.Manifest) error {
-		return backup.RestoreService{}.Restore(m)
-	}
+	return RestoreManagedBackup
 }

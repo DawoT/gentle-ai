@@ -36,8 +36,8 @@ func PrintInstallHelp(w io.Writer) {
 FLAGS
   --agent, --agents <list>           Agents to install
   --component, --components <list>   Components to install
-  --skill, --skills <list>           Skills to install
-  --persona <name>                   Persona to apply
+  --skill, --skills <list>           Skills to install (requires skills in the resolved plan)
+  --persona <name>                   Persona to apply (requires persona in the resolved plan, except custom)
   --preset <name>                    Preset to apply
   --scope global|workspace           Install scope (env: GENTLE_AI_INSTALL_SCOPE)
   --channel stable|beta|nightly      Release channel; nightly is an alias for beta (env: GENTLE_AI_CHANNEL)
@@ -51,6 +51,17 @@ FLAGS
                                      under ~/.claude/gentle-ai/orchestrator/ (default off; see docs/rollback.md)
   --dry-run                          Preview plan without executing
   --help, -h                         Show this help
+
+ISOLATED INSTALLS (absolute paths; all unset by default)
+  GENTLE_AI_HOME=<dir>               Gentle AI state, backups and telemetry state instead of ~/.gentle-ai
+  GENTLE_AI_PI_CONFIG_DIR=<dir>      gentle-pi config folder for persona.json and background-subagents.json
+                                     instead of ~/.pi/gentle-ai (same folder as gentle-pi's GENTLE_PI_CONFIG_HOME)
+  GENTLE_AI_ENGRAM_BIN=<file>        Use this Engram executable: no brew, download, go install or PATH change,
+                                     and dependency detection runs no git, curl, node, npm, brew or go command
+
+ORPHAN MODIFIERS
+  Rerun gentle-ai install with the required consumer added to your existing
+  component list, or remove the modifier. Components are not added automatically.
 `)
 }
 

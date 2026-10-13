@@ -89,6 +89,9 @@ type SyncResult struct {
 	// components touch the same file. It is nil when no files changed.
 	ChangedFiles  []string
 	ManualActions []string
+	// DryRunStops lists refusals a dry-run found that the real sync would stop
+	// on before writing anything.
+	DryRunStops []string
 
 	Background              OpenCodeBackgroundResolution
 	BackgroundPolicyEnabled bool
@@ -473,7 +476,7 @@ type syncRuntime struct {
 // created because the shared compatibility tree is global-only.
 func newSyncRuntimeWithScope(homeDir string, selection model.Selection, scope InstallScope) (*syncRuntime, error) {
 	workspaceDir, _ := os.Getwd()
-	backupRoot := filepath.Join(homeDir, ".gentle-ai", "backups")
+	backupRoot := state.BackupsDir(homeDir)
 	state := &runtimeState{}
 	if scope == ScopeWorkspace {
 		snapshotDir, err := os.MkdirTemp("", "gentle-ai-rollback-*")
@@ -1043,7 +1046,7 @@ func syncPersonaPathsWithWorkspaceScoped(homeDir, workspaceDir string, scope Ins
 			if scope == ScopeWorkspace {
 				continue
 			}
-			paths = append(paths, persona.PiPersonaConfigPath(homeDir))
+			paths = append(paths, persona.PiGlobalPersonaConfigPath(homeDir))
 			continue
 		}
 		targetDir := componentInjectionDirScoped(homeDir, workspaceDir, scope, adapter)
@@ -1585,7 +1588,7 @@ func (s componentSyncStep) Run() error {
 		// remains an install-only concern.
 		for _, adapter := range adapters {
 			if adapter.Agent() == model.AgentPi {
-				res, err := persona.InjectPiPersona(s.homeDir, s.selection.Persona)
+				res, err := persona.InjectPiPersonaAt(persona.PiGlobalPersonaConfigPath(s.homeDir), s.selection.Persona)
 				if err != nil {
 					return fmt.Errorf("sync persona for %q: %w", adapter.Agent(), err)
 				}
@@ -2098,6 +2101,15 @@ func runSyncWithSelectionScope(homeDir string, selection model.Selection, scope 
 	result.ManualActions = append(result.ManualActions, rt.state.retiredSDDActions...)
 	result.ManualActions = append(result.ManualActions, rt.skippedActions...)
 	result.SkippedAgents = append(result.SkippedAgents, rt.skippedParts...)
+	if scope == ScopeGlobal && containsAgent(agentIDs, model.AgentPi) {
+		warning, inspectErr := inspectPiMCP(homeDir)
+		if inspectErr != nil {
+			warning = fmt.Sprintf("Pi MCP configuration could not be inspected: %v; inspect or repair it manually, then run `gentle-ai doctor`", inspectErr)
+		}
+		if warning != "" {
+			result.ManualActions = append(result.ManualActions, "WARNING: "+warning)
+		}
+	}
 
 	// Capture how many managed assets were actually changed.
 	// Deduplicate paths — multiple components may touch the same file
@@ -2380,6 +2392,13 @@ func RunSync(args []string) (SyncResult, error) {
 			if prepare, ok := step.(prepareBackupStep); ok && prepare.targetErr != nil {
 				return result, fmt.Errorf("resolve backup targets: %w", prepare.targetErr)
 			}
+			// Without consent the plugin SDK preflight only reads, so the
+			// dry-run reports the refusal the real sync would stop on.
+			if preflight, ok := step.(openCodePluginDependencyPreflightStep); ok && preflight.consent == nil {
+				if err := preflight.Run(); err != nil {
+					result.DryRunStops = append(result.DryRunStops, err.Error())
+				}
+			}
 		}
 		return result, nil
 	}
@@ -2581,6 +2600,9 @@ func RenderSyncReport(result SyncResult) string {
 		}
 		fmt.Fprintf(&b, "Prepare steps: %d\n", len(result.Plan.Prepare))
 		fmt.Fprintf(&b, "Apply steps: %d\n", len(result.Plan.Apply))
+		for _, stop := range result.DryRunStops {
+			fmt.Fprintf(&b, "Would stop: %s\n", stop)
+		}
 		backgroundReport()
 		return strings.TrimRight(b.String(), "\n")
 	}
